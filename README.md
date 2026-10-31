@@ -28,7 +28,7 @@ These are estimates built from public job listings, public hiring guides and can
 
 ## Google DeepMind
 
-- [Research Scientist, Gemini Agent Safety Post Training, DeepMind](google-deepmind/research-scientist-gemini-agent-safety-post-training/): 15 questions
+- [Research Scientist, Gemini Agent Safety Post Training](google-deepmind/research-scientist-gemini-agent-safety-post-training/): 15 questions
 
 ## Meta
 
