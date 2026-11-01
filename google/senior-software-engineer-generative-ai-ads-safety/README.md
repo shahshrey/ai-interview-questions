@@ -47,7 +47,7 @@ Questions below are labelled with the round they fit. Classic algorithm question
 #### Q1. (Phone screen or onsite coding, no AI, as at Google) A stream of policy-violation events arrives one at a time. Implement add(violation_type) that returns the most frequent violation type among the last N events, in O(1) per event.
 
 Round: Phone screen or onsite coding. AI policy: Not allowed. Type: Classic algorithm. Difficulty: Hard. Topic: Sliding window, hashing.
-Related practice: Sliding Window Maximum https://leetcode.com/problems/sliding-window-maximum/ (Hard), Longest Substring Without Repeating Characters https://leetcode.com/problems/longest-substring-without-repeating-characters/ (Medium)
+Related practice: [Sliding Window Maximum](https://leetcode.com/problems/sliding-window-maximum/) (Hard), [Longest Substring Without Repeating Characters](https://leetcode.com/problems/longest-substring-without-repeating-characters/) (Medium)
 
 <details>
 <summary>Show answer</summary>
@@ -123,7 +123,7 @@ Why this is likely: prep guides built on candidate reports say the Google phone 
 #### Q2. (Onsite coding, no AI, as at Google, often on a whiteboard) Given ad landing URLs, a list of redirect hops, and a set of flagged URLs, return every ad whose landing URL reaches a flagged URL within k redirects.
 
 Round: Onsite coding. AI policy: Not allowed. Type: Classic algorithm. Difficulty: Medium. Topic: Graph BFS.
-Related practice: Number of Islands https://leetcode.com/problems/number-of-islands/ (Medium), Course Schedule II https://leetcode.com/problems/course-schedule-ii/ (Medium)
+Related practice: [Number of Islands](https://leetcode.com/problems/number-of-islands/) (Medium), [Course Schedule II](https://leetcode.com/problems/course-schedule-ii/) (Medium)
 
 <details>
 <summary>Show answer</summary>
