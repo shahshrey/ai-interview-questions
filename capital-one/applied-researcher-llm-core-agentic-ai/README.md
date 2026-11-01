@@ -12,16 +12,17 @@ Capital One's AI and ML recruiters describe the loop on the company careers site
 4. Power Day, technical round (60 minutes). 30 minutes of live coding in CodeSignal (one candidate reported a medium binary tree problem), then 30 minutes of AI and ML depth tied to the team. For this team that means pre-training, training and inference optimization, fine-tuning and agentic AI. Expect to reason from first principles.
 5. Power Day, system design (60 minutes). Design an end-to-end system built on modern LLM concepts, slanted toward the team's work (inference, safety and guardrails, agents, or training).
 6. Power Day, behavioral (60 minutes). STAR format with follow-ups on why you did things and what you personally contributed. Engineering candidates also report a question on how you use AI day to day and where you do not trust it.
-7. Power Day, case study (60 minutes). A business problem built on a public Capital One product, often ending in reading or debugging code against a business rule without running it. A customer chatbot and virtual card numbers are the most reported cases.
+7. Power Day, case study (60 minutes). A business problem built on a public Capital One product, often ending in reading or debugging code against a business rule without running it. Engineering-track reports name a customer chatbot and virtual card numbers most often.
 8. Possibly a research presentation. Some research candidates report presenting one project to two researchers, or discussing a pre-assigned LLM project. This depends on the team.
 
-Capital One has added an agentic coding round with Claude Code to software engineering Power Days, where you fix a bug in a large codebase and then build a feature. Applied Researcher reports have yet to mention it, so ask your recruiter. Q4 below is a drill in that format in case it appears. All four Power Day rounds count equally.
+Capital One has added an agentic coding round with Claude Code to software engineering Power Days, where you fix a bug in a large codebase and then build a feature. Applied Researcher reports have yet to mention it, so ask your recruiter. Q3 below is a drill in that format in case it appears. All four Power Day rounds count equally.
 
 ## Questions and answers
 
-### CodeSignal assessment (unassisted, 70 minutes)
+### CodeSignal assessment (70 minutes, no AI)
 
-#### Q1. The heights of houses on a street are in an array. One operation raises one house by 1. Return the minimum number of operations so the heights either increase by exactly 1 from left to right or decrease by exactly 1 from left to right.
+#### Q1. The heights of houses on a street are in an array. One operation raises one house by 1. Return the minimum number of operations so the heights either increase by exactly 1 from left to right or decrease by exactly 1 from left to right (online assessment, no AI).
+
 
 Since you can only raise houses, the target array B must cover the input A everywhere: B[i] >= A[i]. An increasing staircase is fully described by its starting height c, so B[i] = c + i. The cost is the sum of B[i] minus A[i], which grows with c, so you want the smallest c that keeps every B[i] at or above A[i]. That is c = max(A[i] minus i). The decreasing case is the mirror image: B[i] = c minus i with c = max(A[i] plus i). Compute both totals and return the smaller one.
 
@@ -65,58 +66,10 @@ Talk through the brute force first in one sentence, then state the observation (
 
 Why this is likely: first-hand Applied Researcher candidate report of the Capital One CodeSignal assessment, plus Capital One's own description of the assessment as four data structures and algorithms questions.
 
-#### Q2. Five block shapes arrive in a given order. Place each one on an m by n board at the first position where it fits, scanning rows top to bottom and columns left to right, without overlapping earlier blocks. Return the final board.
+### Live coding (Power Day technical round, first 30 minutes, no AI)
 
-This is a simulation problem, and the work is writing correct, readable code quickly. Represent each shape as a list of (row, column) offsets from its top-left anchor. For each arriving block, scan anchors in row-major order, check that every offset lands inside the board on an empty cell, and stamp the letter into those cells. The problem guarantees a solution exists, so you can stop at the first fit.
+#### Q2. Given a binary tree with possibly negative values, return the maximum sum of any path, where a path is any sequence of connected nodes that does not reuse a node (Power Day live coding, no AI).
 
-```python
-SHAPES = {
-    "A": [(0, 0)],                          # single cell
-    "B": [(0, 0), (0, 1)],                  # horizontal pair
-    "C": [(0, 0), (1, 0)],                  # vertical pair
-    "D": [(0, 0), (0, 1), (1, 0), (1, 1)],  # 2 by 2 square
-    "E": [(0, 0), (1, 0), (1, 1)],          # L shape
-}
-
-
-def place_blocks(m, n, order):
-    board = [["."] * n for _ in range(m)]
-
-    def fits(r, c, cells):
-        return all(0 <= r + dr < m and 0 <= c + dc < n and board[r + dr][c + dc] == "."
-                   for dr, dc in cells)
-
-    for letter in order:
-        cells = SHAPES[letter]
-        placed = False
-        for r in range(m):
-            for c in range(n):
-                if fits(r, c, cells):
-                    for dr, dc in cells:
-                        board[r + dr][c + dc] = letter
-                    placed = True
-                    break
-            if placed:
-                break
-        if not placed:
-            raise ValueError("no room for " + letter)
-    return ["".join(row) for row in board]
-
-
-out = place_blocks(4, 4, "DBEAC")
-assert out == ["DDBB", "DDEA", "C.EE", "C..."], out
-print("\n".join(out))
-```
-
-The cost is O(k times m times n times s) for k blocks with s cells each, which is fine for interview sizes. If a hidden test is large, keep a pointer to the first row that still has an empty cell and start each scan there, or store each row as a bitmask so a fit check becomes a few AND operations.
-
-The IDE may block pasting, so keep the shape table compact and write one helper (fits) rather than repeating bounds checks per shape. State your anchor convention out loud, because "smallest row, then smallest column" refers to the anchor, and a shape whose top-left cell is empty (an upside-down L) needs a different anchor rule.
-
-Why this is likely: first-hand Applied Researcher candidate report of a Tetris-style block placement question on the Capital One CodeSignal assessment, and the same candidate noted the assessment favors simulation over heavy algorithms.
-
-### Live coding (Power Day technical round, first 30 minutes)
-
-#### Q3. Given a binary tree with possibly negative values, return the maximum sum of any path, where a path is any sequence of connected nodes that does not reuse a node.
 
 At every node, two numbers matter. The first is the best downward path that starts at this node and continues into at most one child: node value plus the larger of the two child gains, where a negative gain is replaced by zero because you can stop. The second is the best path that bends at this node: node value plus both non-negative child gains. The answer is the maximum bend value over all nodes, and the parent only receives the downward value, because a path cannot fork twice.
 
@@ -164,11 +117,37 @@ Time is O(n) and memory is O(n) for the gain map and stack. Mention the two trap
 
 Why this is likely: an Applied Researcher candidate report describes a LeetCode-medium binary tree problem in the Power Day coding round, and Capital One's AI and ML recruiters describe 30 minutes of live CodeSignal coding in that round.
 
-### AI-assisted coding drill (in case your Power Day uses the agentic format)
+### Debug and review work
 
-#### Q4. You get a small fine-tuning repo with an AI assistant. Tests pass, but a fine-tuned model never learns to stop generating. Find and fix the bug, then add response-only loss masking and truncation, and explain how you checked the assistant's changes.
+#### Q3. AI assistant allowed, as in Capital One's agentic round. You get a small fine-tuning repo (collate.py, loss.py, test_collate.py). Tests pass, but a fine-tuned model never learns to stop generating. Find and fix the bug, then add response-only loss masking and truncation, and explain how you checked the assistant's changes.
 
-Start by reading the code yourself before you prompt. Read the data path end to end. The collator builds input_ids, attention_mask and labels, and the loss shifts labels by one. Ask the assistant to summarize each file and list every place that compares against the pad id. Here the original collator built the mask with `ids != pad_id` and padded labels with `pad_id`. In this setup the pad id equals the end-of-sequence id, a common Llama-style choice, so every real EOS token was masked out of attention and loss. The model never saw a target that says "stop", which explains the symptom.
+```python
+# file: collate.py (as given, buggy), with the test_collate.py assert that passes on it
+import numpy as np
+
+
+def collate(examples, pad_id):
+    seqs = [list(ex["ids"]) for ex in examples]
+    batch, width = len(seqs), max(len(s) for s in seqs)
+    input_ids = np.full((batch, width), pad_id, dtype=np.int64)
+    labels = np.full((batch, width), pad_id, dtype=np.int64)
+    for i, ids in enumerate(seqs):
+        input_ids[i, :len(ids)] = ids
+        labels[i, :len(ids)] = ids
+    attention_mask = (input_ids != pad_id).astype(np.int64)
+    return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
+
+
+# test_collate.py (as given): no EOS in the batch, so the bug stays invisible
+PAD = 2
+b = collate([{"ids": [5, 6, 7, 8]}, {"ids": [9, 10]}], pad_id=PAD)
+assert b["input_ids"].tolist() == [[5, 6, 7, 8], [9, 10, PAD, PAD]]
+assert b["attention_mask"].tolist() == [[1, 1, 1, 1], [1, 1, 0, 0]]
+assert b["labels"].shape == b["input_ids"].shape
+print("ok")
+```
+
+Read the data path end to end yourself before you prompt the assistant. The collator builds input_ids, attention_mask and labels, and the loss shifts labels by one. Ask the assistant to summarize each file and list every place that compares against the pad id. Here the original collator built the mask with `ids != pad_id` and padded labels with `pad_id`. In this setup the pad id equals the end-of-sequence id, a common Llama-style choice, so every real EOS token was masked out of attention and loss. The model never saw a target that says "stop", which explains the symptom.
 
 The fix is to build the mask from sequence lengths, never from token values, and to pad labels with an ignore index (-100). The new feature trains only on response tokens by setting labels before prompt_len to the ignore index, and truncation clips the sequence before the mask is built so the two can never disagree.
 
@@ -231,13 +210,105 @@ assert np.isclose(causal_lm_loss(logits[1:], b["labels"][1:]),
 print("ok")
 ```
 
-How to use the assistant: give it scoped tasks ("write a failing test where EOS equals PAD"), read every diff, and reject changes that touch unrelated files. The most important check is the last assertion, which proves padding does not change a sequence's loss. Say out loud what you accept and why, because reports say interviewers grade how you direct and verify the AI more than whether you finish.
+Expect at least one wrong suggestion. Asked to fix the mask, the assistant first proposed `attention_mask = (ids != pad_id) | (ids == eos_id)`. It reads well in a diff, but with pad equal to EOS it marks every padding position as attended. The attention-mask assertion fails on it because the mask comes out all ones, so reject it and ask for a mask built from lengths. Run the checks in order: the new failing test, the full suite, then a 50-step training smoke run confirming the loss on EOS positions is no longer zero.
+
+How to use the assistant: give it scoped tasks ("write a failing test where EOS equals PAD"), read every diff, and accept only changes to the files the task names. The mask assertion catches the attention bug, and the last assertion checks that padded labels use the ignore index. This numpy loss reads only the labels, so to catch mask bugs through the loss, run a real model forward pass. Say out loud what you accept and why, because reports say interviewers grade how you direct and verify the AI more than whether you finish.
 
 Why this is likely: candidate reports describe a new Capital One Power Day round with Claude Code in a large codebase (fix a bug, then build a feature) for engineering roles; it has not been reported for Applied Researcher loops, so treat this as a precaution.
+
+#### Q4. An AI assistant wrote this sampling service for the team's model server. Review it before merge: list every defect, rank them by severity, and write the fixed version with tests that would have caught each one.
+
+```python
+# sampler.py, generated by an AI assistant (review only, do not merge)
+import numpy as np
+
+rng = np.random.default_rng()
+
+
+def sample_next(logits, temperature=0.7, top_p=0.9):
+    z = logits / temperature
+    p = np.exp(z - z.max())
+    p = p / p.sum()
+    order = np.argsort(-p)
+    csum = np.cumsum(p[order])
+    keep = order[csum <= top_p]
+    q = p[keep] / p[keep].sum()
+    return int(keep[rng.categorical(q)])
+
+
+def handle(request, model_logits):
+    params = eval(request["params"])
+    out = []
+    for _ in range(params["max_tokens"]):
+        out.append(sample_next(model_logits(request["prompt"], out), **params["sampling"]))
+    return out
+```
+
+Read it like a colleague's pull request and rank the defects by how much damage each one could do.
+
+1. Security, highest severity. `eval(request["params"])` runs any string a caller sends, so any client can execute code on the GPU host. Parse JSON and validate types and ranges.
+2. Unbounded resource use. max_tokens comes straight from the request, so one call can hold a GPU slot for a billion steps. Cap it on the server, here at 1,024.
+3. Off-by-one in top-p. `csum <= top_p` drops the token that crosses the threshold. When the model is confident, the kept set is empty. With logits [5, 1, 0, -1] at temperature 0.7 the top token alone has probability 0.996, so the division gives NaN and the request fails on the easiest inputs. Keep tokens through the first index where the cumulative sum reaches p.
+4. Hallucinated API. NumPy's Generator has no categorical method, so the first call raises AttributeError, which also tells you nobody ran this code. Use `rng.choice(len(q), p=q)`.
+5. Missing edge case. Temperature 0, which product teams set for consistency, divides by zero. Treat it as greedy argmax.
+
+Also flag the shared module-level generator with no seed parameter, which makes tests irreproducible, and the missing stop on the end-of-sequence token.
+
+```python
+import json
+import numpy as np
+
+MAX_TOKENS = 1024
+
+
+def sample(logits, temperature=1.0, top_p=1.0, rng=None):
+    rng = rng or np.random.default_rng()
+    if temperature == 0:
+        return int(np.argmax(logits))                     # greedy, no division
+    z = logits / temperature
+    p = np.exp(z - z.max())
+    p /= p.sum()
+    order = np.argsort(-p)
+    cutoff = int(np.searchsorted(np.cumsum(p[order]), top_p)) + 1
+    keep = order[:cutoff]                                 # includes the token that crosses p
+    q = p[keep] / p[keep].sum()
+    return int(keep[rng.choice(len(keep), p=q)])
+
+
+def parse_params(raw):
+    params = json.loads(raw)                              # data, never code
+    t = float(params.get("temperature", 0.7))
+    top_p = float(params.get("top_p", 0.9))
+    n = int(params.get("max_tokens", 256))
+    if not (0 <= t <= 2 and 0 < top_p <= 1 and 1 <= n <= MAX_TOKENS):
+        raise ValueError("sampling parameters out of range")
+    return {"temperature": t, "top_p": top_p}, n
+
+
+rng = np.random.default_rng(0)
+peaked = np.array([5.0, 1.0, 0.0, -1.0])                 # top token has p > 0.9
+assert all(sample(peaked, 0.7, 0.9, rng) == 0 for _ in range(200))
+assert sample(peaked, temperature=0) == 0
+flat = np.zeros(4)
+assert len({sample(flat, 1.0, 0.5, rng) for _ in range(2000)}) == 2
+for bad in ('{"max_tokens": 10**9}', '__import__("os").system("id")', '{"max_tokens": 100000}'):
+    try:
+        parse_params(bad)
+        raise AssertionError(bad)
+    except ValueError:
+        pass
+print(parse_params('{"temperature": 0, "max_tokens": 64}'))
+print("ok")
+```
+
+For the fix, rejecting bad parameters with an error beats silently clamping them, because clamping hides client bugs. A schema library such as pydantic gives the same validation in fewer lines but adds a dependency to the serving path; either is fine if every rule has a test. Each assertion above maps to one defect, which is what the reviewer wants to see.
+
+Why this is likely: a Capital One applied research candidate reported about twelve questions on inference parameters and how they change outputs, and Capital One's Power Day case round and new agentic round both ask candidates to read and fix code they did not write.
 
 ### Pre-training at scale
 
 #### Q5. You have to pre-train a 10B parameter model on 500B tokens. Estimate the compute, the GPU hours, and say whether that token count is compute-optimal and why a bank might choose it anyway.
+
 
 Use the standard estimate that training a dense transformer costs about 6 FLOPs per parameter per token: 2 for the forward pass and 4 for the backward pass. That gives 6 times 10B times 500B, or 3e22 FLOPs. An H100 delivers about 989 dense BF16 teraFLOPs at peak. Well-tuned large runs reach roughly 35 to 50 percent model FLOPs utilization (MFU), so plan around 40 percent.
 
@@ -259,13 +330,14 @@ assert abs(flops - 3e22) < 1e18
 
 The output is about 21,000 H100 hours, roughly 41 hours on 512 GPUs. Add 10 to 30 percent for restarts, evaluation, checkpoint writes and lost nodes. Chinchilla's rule of thumb is about 20 tokens per parameter, which for this budget means about a 16B model on about 316B tokens. The plan here uses 50 tokens per parameter, so it is over-trained relative to compute-optimal.
 
-That is usually the right call for a deployed model. Chinchilla minimizes training compute, but a bank pays for inference on every customer interaction for years. A smaller model trained longer costs less per token to serve, fits on fewer GPUs, and is easier to fine-tune and audit. Llama-style models push far past 20 tokens per parameter for this reason. The limits to state: quality gains flatten as tokens per parameter rise, and high-quality domain text is finite, so repeating data past a few epochs gives diminishing returns.
+That is usually the right call for a deployed model. Chinchilla minimizes training compute, but a bank pays for inference on every customer interaction for years. A smaller model trained longer costs less per token to serve, fits on fewer GPUs, and is easier to fine-tune and audit. Llama-style models push far past 20 tokens per parameter for this reason. State the limits too. Quality gains flatten as tokens per parameter rise, and high-quality domain text is finite, so repeating data past a few epochs gives diminishing returns.
 
 Follow-ups to expect: how MFU differs from hardware FLOPs utilization (activation recomputation adds FLOPs that MFU does not count), and how you would check this estimate with a small-scale loss curve before committing the cluster.
 
 Why this is likely: the job listing prefers candidates who were on a team that trained a large language model from scratch at 10B plus parameters and 500B plus tokens, and Capital One's recruiters say pre-training teams ask pre-training questions.
 
 #### Q6. How much GPU memory does training that 10B model need, and how would you shard it? Cover optimizer state, activations, gradient checkpointing and the parallelism layout.
+
 
 Split memory into model state and activations. With BF16 mixed precision and Adam, each parameter needs 2 bytes of BF16 weights, 2 bytes of gradients, 4 bytes of FP32 master weights, and 8 bytes for the two Adam moments: 16 bytes in total. A 10B model therefore carries about 160 GB of state before a single activation, which already exceeds one 80 GB GPU.
 
@@ -293,9 +365,23 @@ Name the knobs you would tune in order: micro-batch size, checkpointing granular
 
 Why this is likely: the job listing's optimization track names training parallelism and partitioning design, gradient checkpointing and optimizing training for a 10B plus model, and the AI and ML depth half of the technical round follows the team's focus.
 
-#### Q7. Partway through pre-training, the loss spikes and sometimes diverges. How do you diagnose it and what do you change?
+#### Q7. Partway through pre-training the 10B model, a teammate pastes this log and asks whether to restart. Diagnose it from the trace and say what you change.
 
-First decide whether the spike is data or optimization. Log the loss per batch along with the global gradient norm, the update-to-weight ratio per layer, the maximum attention logit, and the output logit norm. If the spike lines up with one batch and the run recovers when you skip it, look at that batch: duplicated junk, very long repeated tokens, or a broken shard. If gradient norms and attention logits climb for hundreds of steps first, it is optimization instability.
+```text
+step    loss    grad_norm  max_attn_logit  lr
+41000   2.112   0.31       38.2            3.0e-4
+41100   2.109   0.33       41.0            3.0e-4
+41200   2.107   0.35       44.9            3.0e-4
+41300   2.106   0.41       49.6            3.0e-4
+41400   2.104   0.52       55.3            3.0e-4
+41500   2.108   0.88       62.0            3.0e-4
+41600   2.131   1.00 (clipped)  70.4       3.0e-4
+41700   2.402   1.00 (clipped)  83.1       3.0e-4
+41800   3.917   1.00 (clipped)  97.5       3.0e-4
+41900   7.880   1.00 (clipped)  nan        3.0e-4
+```
+
+Read the columns before the loss. Loss is flat and healthy through step 41500, but the max attention logit has climbed every 100 steps since 41000, from 38 to 62, and the gradient norm rose from 0.31 to 0.88 before it hit the clip at 1.0. The loss reacts only at 41700, and the logits overflow to NaN at 41900. A bad batch looks different: a one-step jump in loss with normal logits before it, and recovery when you skip that batch. This trace is optimization instability driven by attention logit growth. Gradient clipping from step 41600 limits each update and leaves the cause in place.
 
 Known optimization causes in large transformers are attention logits that grow without bound (fixed with QK layer norm), output logits drifting large (fixed with an auxiliary z-loss that pulls the log partition function toward zero, as in PaLM), and Adam's second-moment estimate lagging for rare tokens, which is why large runs lower beta2 to about 0.95. Use warmup, gradient clipping at 1.0, and a learning rate that a small proxy model showed to be stable.
 
@@ -338,13 +424,14 @@ print("spike at", spike_steps(loss))
 
 The z-loss example shows why it helps. Adding 40 to every logit leaves the softmax unchanged, so cross entropy cannot see the drift, while the z-loss term grows sharply and pushes it back.
 
-To recover, restart from the last good checkpoint a few hundred steps before the spike, skip the offending data range, and lower the learning rate or add the missing stabilizer. Write down every intervention, because the final model's behavior has to be explainable later. In a regulated bank that record is part of model risk documentation.
+To recover, restart from step 41000, before the logits started climbing, and turn on QK layer norm. If the architecture is frozen, lower the learning rate by about 30 percent and set beta2 to 0.95 instead. Add an alert when the max attention logit rises for five straight logging intervals. Write down every intervention, because the final model's behavior has to be explainable later. In a regulated bank that record is part of model risk documentation.
 
-Why this is likely: the job listing asks for experience building large deep learning models and training optimization, and diagnosing pre-training instability is a standard depth question for teams that train from scratch.
+Why this is likely: the job listing prefers candidates who pre-trained a 10B+ model from scratch, and Capital One's AI/ML recruiters say the depth half of the technical round follows the team's focus (pre-training here); no candidate report names this exact question, so treat it as an inference from the role.
 
 ### Fine-tuning, distillation and alignment
 
 #### Q8. When would you fine-tune all weights of a 10B model versus use LoRA? Implement a LoRA linear layer and count the trainable parameters.
+
 
 LoRA freezes the pretrained weight W and learns a low-rank update: the layer computes W x plus (alpha over r) times B A x, with A of shape r by d_in and B of shape d_out by r. B starts at zero, so training begins exactly at the base model. Only A and B get gradients and optimizer state. That cuts the 16 bytes per parameter of Adam state to almost nothing for the frozen weights, and you can keep one base model in memory and swap small adapters per task. After training you can merge B A into W, so inference has no extra latency.
 
@@ -387,7 +474,8 @@ Choose LoRA when you need many task-specific variants, compute is limited, or th
 
 Why this is likely: the job listing's fine-tuning track asks for parameter tuning, model adaptation and deploying a fine-tuned large language model.
 
-#### Q9. Capital One researchers proposed critique-guided distillation. Explain the problem it solves, how its training data differs from plain distillation and critique fine-tuning, and write the loss masking for one example.
+#### Q9. Your team wants a 10B student to reason better on policy questions using teacher critiques. Build one training example and its loss masking for critique-guided distillation, and argue for it against plain distillation and critique fine-tuning.
+
 
 Plain supervised distillation trains a student to reproduce a teacher's correct answers. The student copies the surface form of the reasoning without learning why wrong reasoning is wrong, so it generalizes poorly on hard problems. Critique fine-tuning (CFT) instead trains the student to write critiques of flawed answers. That teaches error awareness, but it moves the student toward producing critiques. The paper reports output-format drift and a large drop in instruction following (21.3 percent on IFEval) compared with the base behavior.
 
@@ -425,6 +513,7 @@ Why this is likely: Capital One researchers presented critique-guided distillati
 
 #### Q10. Implement the DPO loss from sequence log-probabilities, and explain when you would choose DPO over PPO-style RLHF for a customer-facing model.
 
+
 DPO starts from the KL-regularized RLHF objective, whose optimal policy is the reference policy reweighted by the exponential of the reward over beta. Inverting that gives an implicit reward of beta times log(pi over pi_ref). Plugging it into a Bradley-Terry preference model makes the partition function cancel. The result is a classification loss on preference pairs: the negative log sigmoid of beta times the difference between the chosen and rejected log ratios. No reward model or sampling loop is needed.
 
 ```python
@@ -458,9 +547,10 @@ Choose DPO when you have a fixed offline preference set, limited infrastructure,
 
 Why this is likely: the job listing names RLHF expertise and instruction or dialogue fine-tuning, and Capital One's research site lists reinforcement learning from human feedback under its LLM and agentic AI focus area.
 
-### Inference and serving
+### Inference, routing and evaluation
 
 #### Q11. You need to serve the 10B model to many concurrent users. Size the KV cache, compare BF16, INT8 and INT4 weights, and show why per-channel quantization matters.
+
 
 Weights scale with precision: 10.2B parameters take about 20 GB in BF16, 10 GB in INT8, and 5 GB in INT4. At long context and high concurrency the KV cache dominates. Each token stores a key and a value per layer, of width number-of-KV-heads times head dimension. With grouped-query attention (8 KV heads of 128 dimensions, versus 32 query heads), the cache is four times smaller than full multi-head attention.
 
@@ -498,52 +588,66 @@ Validate quantized models on the full task suite as well as perplexity, and chec
 
 Why this is likely: the job listing's optimization track names quantization, model compression and inference optimization, and Capital One's research team wrote up LLM serving efficiency as a leading theme from a recent systems conference.
 
-#### Q12. Explain temperature, top-k and top-p sampling, implement them, and say how you would set them for a banking assistant versus for generating diverse synthetic training data.
+#### Q12. The team wants a router that sends easy customer policy questions to the 10B model and hard ones to a frontier model that costs 12 times more per query. Design the offline evaluation that decides whether the router ships and at what threshold.
 
-Temperature divides the logits before softmax. Values below 1 sharpen the distribution toward the top token, values above 1 flatten it, and temperature 0 means greedy decoding. Top-k keeps the k most likely tokens and renormalizes. Top-p (nucleus sampling) keeps the smallest set of tokens whose cumulative probability reaches p, so the candidate set shrinks when the model is confident and grows when many tokens are plausible. Apply temperature first, then the truncation, then sample.
+Fix the decision before the metric. The router ships if it cuts cost while quality on held-out traffic stays within 1 point of always using the large model, at 95 percent confidence, and no critical slice (fees and rates, disputes, account security) regresses at all.
+
+For data, sample 2,000 recent, redacted questions stratified by intent, and deduplicate them against every fine-tuning and router training set by n-gram overlap, because leakage inflates the small model most. Have two annotators label a 200-item subset to settle the rubric.
+
+For grading, exact match fails because good answers vary in wording, and human grading of every item at every threshold costs weeks. An LLM judge with a rubric (grounded in the cited policy, numbers correct, right refusal) is the scalable middle option, but only after you validate it. Require Cohen's kappa of at least 0.7 against the human labels, and test it for a bias toward longer answers or toward its own model family.
+
+For statistics, both systems answer the same questions, so bootstrap the paired per-question difference. That needs far fewer items than comparing two independent accuracies, because most questions are right under both systems.
 
 ```python
 import numpy as np
 
-
-def sample(logits, temperature=1.0, top_k=None, top_p=None, rng=None):
-    rng = rng or np.random.default_rng()
-    if temperature == 0:
-        return int(np.argmax(logits))
-    z = logits / temperature
-    p = np.exp(z - z.max())
-    p /= p.sum()
-    order = np.argsort(-p)
-    keep = np.ones_like(p, dtype=bool)
-    if top_k is not None:
-        keep[order[top_k:]] = False
-    if top_p is not None:
-        csum = np.cumsum(p[order])
-        cutoff = np.searchsorted(csum, top_p) + 1          # include the token that crosses p
-        keep[order[cutoff:]] = False
-    p = np.where(keep, p, 0.0)
-    return int(rng.choice(len(p), p=p / p.sum()))
-
-
-logits = np.array([3.0, 2.5, 1.0, 0.5, -1.0, -2.0])
 rng = np.random.default_rng(0)
-assert sample(logits, temperature=0) == 0
-support = lambda **kw: sorted({sample(logits, rng=rng, **kw) for _ in range(3000)})
-print("T=1.0", support(temperature=1.0))
-print("T=0.5, top_p=0.9", support(temperature=0.5, top_p=0.9))
-print("top_k=2", support(top_k=2))
-assert support(top_k=2) == [0, 1]
+n = 2000                                             # held-out, labeled policy questions
+hard = rng.random(n)                                 # latent difficulty
+small_ok = rng.random(n) > 0.6 * hard**3               # 10B model
+large_ok = rng.random(n) > 0.25 * hard**3              # frontier model
+router = hard + rng.normal(0, 0.15, n)               # router's difficulty score
+COST_SMALL, COST_LARGE = 1.0, 12.0
+
+
+def paired_ci(diff, B=2000):
+    idx = rng.integers(0, len(diff), (B, len(diff)))
+    return np.percentile(diff[idx].mean(1), [2.5, 97.5])
+
+
+def kappa(a, b):
+    po = (a == b).mean()
+    pe = a.mean() * b.mean() + (1 - a.mean()) * (1 - b.mean())
+    return (po - pe) / (1 - pe)
+
+
+rows = []
+for t in np.linspace(-0.4, 1.2, 33):
+    to_small = router < t
+    correct = np.where(to_small, small_ok, large_ok)
+    lo, hi = paired_ci(correct.astype(float) - large_ok)
+    cost = np.where(to_small, COST_SMALL, COST_LARGE).mean() / COST_LARGE
+    rows.append((t, to_small.mean(), correct.mean(), lo, cost))
+
+ship = min((r for r in rows if r[3] >= -0.01), key=lambda r: r[4])
+print(f"large only: acc {large_ok.mean():.3f}, cost 1.00")
+print(f"ship t={ship[0]:.2f}: {ship[1]:.0%} to 10B, acc {ship[2]:.3f}, "
+      f"CI low {ship[3]:+.3f}, cost {ship[4]:.2f}")
+
+human = rng.random(200) < 0.8                        # 200 double-labeled items
+judge = np.where(rng.random(200) < 0.9, human, ~human)
+print(f"judge vs human kappa {kappa(human, judge):.2f}")
+assert ship[3] >= -0.01 and ship[4] < 0.9
 ```
 
-With temperature 0.5 and top-p 0.9, only the top two tokens survive. At temperature 1 with no truncation, every token can appear.
+In this simulation, threshold 0.40 sends 40 percent of traffic to the 10B model, cuts cost by 37 percent, and keeps the lower bound of the quality change above minus 1 point. Threshold 0.45 already fails the gate. Report per-slice results next to the headline, rerun monthly on fresh traffic because the intent mix drifts, and send judge and human disagreements to review.
 
-For a customer-facing banking assistant, use greedy or low temperature (0 to 0.3) with top-p around 0.9, because consistency and factual accuracy matter more than variety. Remember that even temperature 0 is not perfectly deterministic on GPUs because batching changes floating-point reduction order. For synthetic data, self-consistency voting or red-team prompt generation, raise temperature to 0.8 to 1.2 with top-p near 0.95 to get diverse samples, then filter with a verifier. Also mention max tokens and stop sequences, which bound cost and keep tool-call formats parseable. Repetition and frequency penalties help open-ended text but can corrupt structured output such as JSON or account numbers.
-
-Why this is likely: a Capital One applied research candidate reported a pre-assigned LLM project discussion with about twelve questions on inference parameters and how they change outputs.
+Why this is likely: Capital One researchers presented work on routing queries across models at a recent language conference, and Capital One's AI and ML recruiters describe a system design round on full end-to-end LLM infrastructure.
 
 ### LLM system design and agent safety
 
 #### Q13. Design an LLM assistant that answers customer questions about their accounts and can take simple actions, such as locking a card. Cover retrieval, tools, guardrails, latency and evaluation.
+
 
 Start with requirements, because the case and design rounds reward asking a second layer of questions. Which actions are allowed? What latency target applies (for example, first token under one second in chat)? What must never happen? Leaking another customer's data, inventing a fee or rate, and acting without confirmation are the obvious ones.
 
@@ -555,9 +659,10 @@ For latency, retrieval and reranking take about 100 to 200 ms, tools 100 to 300 
 
 For evaluation, build an offline test set of real (redacted) intents with gold answers and gold tool calls. Score groundedness, numeric exactness, correct refusals and over-refusals, and run adversarial suites. Online, run a shadow deployment, then a small percentage rollout with human review of sampled conversations, tracking containment, escalation rate, complaints and any incorrect action. Model risk management in a bank needs documented evaluation and monitoring, so plan the evaluation harness as a deliverable from the start.
 
-Why this is likely: Capital One's AI and ML recruiters say the Power Day system design round asks for a full end-to-end system built on modern LLM concepts, and candidates report customer chatbot cases in the Power Day case round.
+Why this is likely: Capital One's AI and ML recruiters say the Power Day system design round asks for a full end-to-end system built on modern LLM concepts, and software engineering candidates and a prep-vendor summary name customer chatbots among Power Day case topics (low confidence for research roles).
 
 #### Q14. How would you evaluate and red-team a multi-turn, tool-using agent before it touches customer accounts? Include how you would find attacks automatically.
+
 
 Evaluate whole multi-turn trajectories, because many agent failures only appear several turns in. A benign request becomes a harmful action after context builds up, or an injected instruction in a tool result takes effect three calls later. Define the threat model (malicious user, malicious content in retrieved or tool data, and honest user plus model error) and the harmful outcomes (unauthorized action, data disclosure, policy-violating advice). Then build an environment with mocked tools so the agent can act without touching real accounts.
 
@@ -597,13 +702,14 @@ Why this is likely: Capital One researchers published work on multi-turn agent u
 
 #### Q15. Tell me about a research project you owned end to end. How did you use AI tools along the way, and how did you check their output?
 
-Capital One's recruiters say the most common stumble is describing what happened without saying why, and not making your own contribution clear. They also look for a second layer of questions, such as asking whether another approach was considered. Structure the answer as STAR, but spend most of the time on Action and on the choices behind it.
+
+Capital One's recruiters want to hear why you made each choice and which parts were yours, and they say candidates most often stumble on those two points. They also look for a second layer of questions, such as asking whether another approach was considered. Structure the answer as STAR, but spend most of the time on Action and on the choices behind it.
 
 Situation and task (about 30 seconds). One sentence on the problem and why it mattered, with a baseline number. Example: "Our fine-tuned model hallucinated fee amounts in about 6 percent of answers on an internal test set, and the product team could not launch above 1 percent."
 
 Action (about 2 minutes). Say what you decided and why. Mention the options you rejected: "I considered adding more SFT data but chose a grounding check plus preference tuning because the errors were confident ones." Describe what you built yourself and what you delegated. Then answer the AI part concretely. Name where AI tools sped you up (scaffolding evaluation scripts, drafting data filters, summarizing related papers) and how you checked each one. You wrote unit tests before accepting generated code. You spot-checked 100 model-labeled examples by hand and measured agreement. You verified every cited paper claim against the paper itself. Also give one place you chose to work without the tool, such as the evaluation metric definition, because a subtle error there would have invalidated every later result.
 
-Result (about 30 seconds). The metric change, what shipped, and what you would do differently. A real limitation you found and fixed makes the story more credible than a perfect outcome.
+Result (about 30 seconds). Give the metric change, say what shipped, and say what you would do differently. A real limitation you found and fixed makes the story more credible than a perfect outcome.
 
 Prepare for the follow-up: "What would the next step of this project be?" Hiring managers for these roles report asking about next steps, so have a concrete plan with the experiment you would run first. Keep two backup stories ready, one about a failed experiment and one about disagreeing with a senior stakeholder, because Capital One weights behavioral rounds equally with technical ones.
 
@@ -634,7 +740,6 @@ Why this is likely: Capital One's AI and ML recruiters describe STAR behavioral 
 - https://prachub.com/interview-experiences/capital-one-new-grad-software-engineer-interview-experience-power-day-with-behavioral-case-study-and-agentic-coding
 - https://prachub.com/interview-experiences/capital-one-intern-software-engineer-interview-experience-superday-with-a-case-study-and-an-ai-assisted-coding-round
 - https://www.calibrd.com/interview-prep/capital-one-interview
-- https://www.teamblind.com/post/capital-one-power-day-interview-ijgi4r10
 - https://capitalone.science/research
 - https://capitalone.science/blog/llm-reasoning-and-agentic-safety-at-icml-2026
 - https://capitalone.science/blog/capital-one-at-acl-2026
