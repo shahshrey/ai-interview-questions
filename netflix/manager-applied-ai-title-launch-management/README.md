@@ -6,35 +6,81 @@ Likely interview questions based on the public job listing, public hiring guides
 
 Netflix publishes no loop for experienced hires beyond an older Tech Blog post, and each hiring team writes its own problems, so treat this as a likely shape. No public report covers this exact team. The shape below combines recent engineering manager reports with recent IC reports.
 
-1. Recruiter call (about 30 minutes, virtual). Background, why Netflix, an open compensation conversation, and the culture memo. Expect to be asked which parts of the memo you disagree with.
-2. Hiring manager screen (30 to 60 minutes, virtual). A deep dive on one or two systems you shipped and the people decisions behind them: evaluation design, guardrails, rollout, what broke. Recent IC reports add "How do you use AI in your day-to-day work?", so have a concrete answer about how you check AI output.
-3. Technical screen (length varies, virtual). For managers this is usually a design exercise tied to the team's real problems, a walkthrough of a past system, or a leadership scenario round. Some managers report a prepared write-up that they present instead of a live whiteboard.
-4. First onsite round (4 to 5 interviews of 45 to 60 minutes, mostly virtual). Expect one system design tied to the team's real problems (likely launch triage, eval pipelines or guardrailed automation), a technical leadership depth round, and two or three people and behavioral rounds. One recent manager loop had no drawing tool in system design and pushed deep on product signals.
-5. Possible AI-assisted coding round (about 60 minutes, CodeSignal with a built-in assistant). Candidates report it in recent L5 and L6 IC onsites: work in a real codebase and get judged on how you prompt, review, test, and push back on the assistant. So far only IC candidates report it. Classic algorithm rounds also appear only in IC reports, so this README uses two AI-assisted code questions (Q9 and Q12) in place of algorithm questions.
-6. Second onsite round (2 to 3 interviews of about 45 minutes). Directors, partner teams, and other engineering leaders probe cross-team work, influence without authority, judgment under ambiguity, and the culture memo. Expect heavy domain discussion here too.
-7. Decision. The team decides together and often compares finalists, so expect a pause after the onsite.
+1. Recruiter call (about 30 minutes, virtual). Background, why Netflix, an open compensation conversation, and the culture memo. Expect to be asked which parts of the memo you disagree with. AI: not relevant.
+2. Hiring manager screen (30 to 60 minutes, virtual). A deep dive on one or two systems you shipped and the people decisions behind them: evaluation design, guardrails, rollout, what broke. Recent IC reports add "How do you use AI in your day-to-day work?", so have a concrete answer about how you check AI output. AI: unknown; Netflix publishes no candidate AI rule, so assume none in conversation.
+3. Technical screen (length varies, virtual). For managers this is usually a design exercise tied to the team's real problems, a walkthrough of a past system, or a leadership scenario round. Some managers report a prepared write-up that they present instead of a live whiteboard. AI: unknown; no manager report mentions an assistant.
+4. First onsite round (4 to 5 interviews of 45 to 60 minutes, mostly virtual). Expect one system design tied to the team's real problems (likely launch triage, eval pipelines or guardrailed automation), a technical leadership depth round, and two or three people and behavioral rounds. One recent manager loop had no drawing tool in system design and pushed deep on product signals. AI: unknown; assume none in live design and people rounds.
+5. Possible AI-assisted coding round (about 60 minutes, CodeSignal with a built-in assistant). Candidates report it in recent L5 and L6 IC onsites: work in a real codebase and get judged on how you prompt, review, test, and push back on the assistant. So far only IC candidates report it. Classic algorithm rounds also appear only in IC reports, so this README uses two AI-assisted code questions (Q9 and Q12) in place of algorithm questions. AI: provided (CodeSignal assistant).
+6. Second onsite round (2 to 3 interviews of about 45 minutes). Directors, partner teams, and other engineering leaders probe cross-team work, influence without authority, judgment under ambiguity, and the culture memo. Expect heavy domain discussion here too. AI: unknown; assume none.
+7. Decision. The team decides together and often compares finalists, so expect a pause after the onsite. AI: not relevant.
 
 ## Questions and answers
 
+### Question index
+
+| # | Question | Type | Round | AI policy | Difficulty |
+|---|---|---|---|---|---|
+| [Q1](#q1) | Design an agentic system that detects, classifies, and routes title launch issues... | Design | Onsite system design | Unknown | Hard |
+| [Q2](#q2) | Design guardrailed auto-remediation: the system fixes some launch issues itself. How... | Design | Onsite system design | Unknown | Hard |
+| [Q3](#q3) | Debug this triage agent trace: the agent closed a real launch issue as a false... | Trace debug | Onsite technical leadership depth | Unknown | Medium |
+| [Q4](#q4) | Model the data behind launch triage: titles, per-region launch windows, checks... | Build | Technical screen (data modeling, reported in IC loops) | Unknown | Medium |
+| [Q5](#q5) | One quarter, two pods. Launch Ops wants auto-remediation of setup issues, a partner... | Concept plus code | Onsite people and leadership | Unknown | Medium |
+| [Q6](#q6) | Design the evaluation pipeline that gates every change to the triage agent: model... | Design | Onsite system design | Unknown | Hard |
+| [Q7](#q7) | You want an LLM judge to block or approve automated launch fixes. How do you build... | Design | Onsite technical leadership depth | Unknown | Hard |
+| [Q8](#q8) | The new agent version scores 87.4% on the 600-item golden set against 85.1% for the... | Concept plus code | Onsite technical leadership depth | Unknown | Medium |
+| [Q9](#q9) | The assistant wrote this gate that decides whether an LLM judge may block launch... | Review | AI-assisted coding (reported in IC loops, not confirmed for managers) | CodeSignal assistant provided | Medium |
+| [Q10](#q10) | Design the shadow mode and canary rollout for moving an issue class from... | Design | Onsite system design | Unknown | Hard |
+| [Q11](#q11) | How do you set the confidence threshold at which the agent acts on its own, and why... | Design | Onsite technical leadership depth | Unknown | Medium |
+| [Q12](#q12) | This audit job promoted the rights-change class to full autonomy after 0 errors in... | Debug | AI-assisted coding (reported in IC loops, not confirmed for managers) | CodeSignal assistant provided | Hard |
+| [Q13](#q13) | Launch Operations has run this workflow by hand for years. How do you introduce... | Behavioral | Onsite people and leadership, or a role-play round | Unknown | Medium |
+| [Q14](#q14) | How would you build and run a team of ML scientists, analytics engineers, and data... | Behavioral | Onsite people and leadership | Unknown | Medium |
+| [Q15](#q15) | Tell me about an automated or ML-driven decision that went wrong in production... | Behavioral | Recruiter screen and onsite people round | Unknown | Medium |
+
 ### Agentic triage and remediation
+
+<a id="q1"></a>
 
 #### Q1. Design an agentic system that detects, classifies, and routes title launch issues across ingest, setup, personalization, and playback systems.
 
-Requirements. Thousands of titles launch monthly across 190+ countries. Assume 50,000 to 200,000 check failures per day, mostly duplicates or symptoms of a few root causes. Targets: deduplicate into issues within minutes, classify owner and severity with at least 95% precision on high-severity classes, and alert before the launch window opens.
+Round: Onsite system design. AI policy: Unknown. Type: Design. Difficulty: Hard. Topic: Agentic launch issue triage.
 
-Components. (1) Signal layer: the existing title health checks (declarative requirements, collectors, Kafka streams, Hollow snapshots) emit typed failure events. Querying with a future timestamp, the time-travel pattern Netflix describes, finds problems before launch. (2) Correlation: group events by title, launch window, region, and upstream dependency, so 4,000 missing-artwork events in 40 countries become one issue. (3) Classification: deterministic rules first, since setup issues are the most common and easiest to fix. An LLM classifier handles the unknown bucket, with retrieved past resolutions as few-shot context. (4) Diagnosis agent: on demand for severe or novel issues, with read-only tools (catalog, asset status, rights, encode status) and a budget of about 8 tool calls. Runbooks give the rule, systems of record give current state, and spec compliance stays in code. (5) Router: class to owning team, severity from time to launch and title tier.
+<details>
+<summary>Show answer</summary>
+
+Task: Design detection, deduplication, classification, diagnosis and routing for launch issues, with targets and scaling follow-ups.
+
+What they grade: clear requirements with numbers; rules before LLMs; evidence-grounded diagnosis; a plan for hot keys and backpressure.
+
+Numbers: Thousands of titles launch monthly across 190+ countries. Assume 50,000 to 200,000 check failures per day, mostly duplicates or symptoms of a few root causes. Targets: deduplicate into issues within minutes, classify owner and severity with at least 95% precision on high-severity classes, and alert before the launch window opens.
+
+Approach: Components. (1) Signal layer: the existing title health checks (declarative requirements, collectors, Kafka streams, Hollow snapshots) emit typed failure events. Querying with a future timestamp, the time-travel pattern Netflix describes, finds problems before launch. (2) Correlation: group events by title, launch window, region, and upstream dependency, so 4,000 missing-artwork events in 40 countries become one issue. (3) Classification: deterministic rules first, since setup issues are the most common and easiest to fix. An LLM classifier handles the unknown bucket, with retrieved past resolutions as few-shot context. (4) Diagnosis agent: on demand for severe or novel issues, with read-only tools (catalog, asset status, rights, encode status) and a budget of about 8 tool calls. Runbooks give the rule, systems of record give current state, and spec compliance stays in code. (5) Router: class to owning team, severity from time to launch and title tier.
 
 The hard part is root-cause grouping. Ask the model for structured references (event ids, log line ranges, as Pensive does) so every claim resolves to real evidence.
 
-Tradeoffs. Rules are precise and cheap but cover a shrinking share as formats change. LLM classification widens coverage but needs a regression floor, with frozen rules as labels wherever they fire. Diagnosis agents cost tens of seconds each, so run them on demand.
+Alternatives: Rules are precise and cheap but cover a shrinking share as formats change. LLM classification widens coverage but needs a regression floor, with frozen rules as labels wherever they fire. Diagnosis agents cost tens of seconds each, so run them on demand.
 
-Expect follow-ups. If event volume spikes 10x on a tentpole launch day, partition the stream by a hash of title_id and launch window, so one title's events stay on one consumer and its state can be dropped after launch. If the correlation job OOMs grouping by title, a global tentpole is the hot key, so pre-aggregate per region, then merge, and cap per-key state with a spill to disk. If the LLM classifier falls behind, a bounded queue applies backpressure, rules keep running at full rate, and LLM work for the lowest-tier titles is shed first. Consumer lag and the unknown-bucket share page the platform on-call; misroute rate and time to first owner action go to the triage team.
+Follow-ups: If event volume spikes 10x on a tentpole launch day, partition the stream by a hash of title_id and launch window, so one title's events stay on one consumer and its state can be dropped after launch. If the correlation job OOMs grouping by title, a global tentpole is the hot key, so pre-aggregate per region, then merge, and cap per-key state with a spill to disk. If the LLM classifier falls behind, a bounded queue applies backpressure, rules keep running at full rate, and LLM work for the lowest-tier titles is shed first. Consumer lag and the unknown-bucket share page the platform on-call; misroute rate and time to first owner action go to the triage team.
+
+Pitfalls: Sending every failure event to an LLM; grouping by title only, which merges unrelated regions; diagnosis output with no links to evidence.
 
 Why this is likely: Netflix engineering blog, a manager guide and a candidate report. The Title Launch Observability and Pensive AI posts describe this architecture, the IGotAnOffer manager guide (medium confidence) says design questions are tied to the team's real problems, and a Reddit Staff SWE report (IC loop, onsite July 2026) describes follow-ups on scaling, OOM, partitioning and monitoring.
 
+</details>
+
+<a id="q2"></a>
+
 #### Q2. Design guardrailed auto-remediation: the system fixes some launch issues itself. How do you decide what it may do, and how do you keep it safe?
 
-Start with an action catalog before choosing a model. List every remediation (re-trigger an encode, re-request a missing subtitle from a partner, correct a metadata field, extend an availability window, hold a launch) and score each on reversibility, blast radius (one locale versus a global tentpole), and time to detect if wrong. That gives roughly four tiers. Tier 0: idempotent retries and re-requests. Tier 1: reversible metadata edits on non-tier-1 titles. Tier 2: changes visible to members. Tier 3: launch holds, date moves, and rights changes, which stay human-decided.
+Round: Onsite system design. AI policy: Unknown. Type: Design. Difficulty: Hard. Topic: Guardrails for autonomous remediation.
+
+<details>
+<summary>Show answer</summary>
+
+Task: Decide which launch fixes the system may apply on its own, and design the controls that keep those fixes safe and reversible.
+
+What they grade: an action catalog scored by risk; policy checks in deterministic code; rollback and kill switches; a graduation rule.
+
+Approach: Start with an action catalog before choosing a model. List every remediation (re-trigger an encode, re-request a missing subtitle from a partner, correct a metadata field, extend an availability window, hold a launch) and score each on reversibility, blast radius (one locale versus a global tentpole), and time to detect if wrong. That gives roughly four tiers. Tier 0: idempotent retries and re-requests. Tier 1: reversible metadata edits on non-tier-1 titles. Tier 2: changes visible to members. Tier 3: launch holds, date moves, and rights changes, which stay human-decided.
 
 Layers for each action. Before the action: schema and spec validation of inputs, and pass partner-supplied text to the model as quoted, untrusted data in its own field, because a guardrail LLM can itself be prompt-injected. Policy as code: a deterministic checker evaluates rights windows, territory rules, and the delivery spec before any tool executes. The model proposes an action, and code decides whether it runs. Least privilege: each tier gets its own service identity and tool allowlist, and the agent cannot call Tier 2 tools from a Tier 0 workflow. Confidence gating: a per-class threshold chosen from a risk-coverage curve (see Q11) in place of a single global 0.9. After the action: verify against systems of record, re-run the failing title health check, and roll back automatically if it does not turn green within a set window.
 
@@ -42,11 +88,19 @@ Operational controls. A kill switch per action class. Rate limits sized to blast
 
 Graduation. A class moves up one tier only after a shadow period where proposed actions are compared to operator actions, followed by an audit sample with an upper error bound below the target (Q12). It drops back automatically after any Sev-1 or when audited precision falls.
 
-Asymmetric cost sets the thresholds. Pensive's authors note that the costliest error for restartability is marking a recoverable failure as permanent, because it turns a fixable step into a hard failure and a page. Write down which direction of error is worse for each action class and tune thresholds to it. For a launch hold, a false negative (missing a real problem) is usually worse. For a metadata edit, a false positive (a wrong edit) is worse.
+Risks: Asymmetric cost sets the thresholds. Pensive's authors note that the costliest error for restartability is marking a recoverable failure as permanent, because it turns a fixable step into a hard failure and a page. Write down which direction of error is worse for each action class and tune thresholds to it. For a launch hold, a false negative (missing a real problem) is usually worse. For a metadata edit, a false positive (a wrong edit) is worse.
+
+Pitfalls: One global confidence threshold; letting the model call write tools directly; no verification that the fix actually turned the check green.
 
 Why this is likely: Netflix job listing and engineering blog. The listing names "safety guardrails" and introducing automation into an established workflow, and the Pensive AI and judge lifecycle posts stress gating and asymmetric errors.
 
+</details>
+
+<a id="q3"></a>
+
 #### Q3. Debug this triage agent trace: the agent closed a real launch issue as a false alarm. Find the root causes, fix them, and design the eval that proves the fix.
+
+Round: Onsite technical leadership depth. AI policy: Unknown. Type: Trace debug. Difficulty: Medium. Topic: Agent trace failure analysis.
 
 ```json
 {
@@ -68,7 +122,14 @@ Why this is likely: Netflix job listing and engineering blog. The listing names 
 }
 ```
 
-Compare each step with the issue record and treat the agent's summary as a claim to check. Two defects stand out.
+<details>
+<summary>Show answer</summary>
+
+Task: Find why the agent closed a real issue as a false alarm, fix the system, and prove the fix with an eval.
+
+What they grade: reading the trace against the issue record; naming both defects; fixes in the tools and orchestrator; a replay eval with mutations.
+
+Approach: Compare each step with the issue record and treat the agent's summary as a claim to check. Two defects stand out.
 
 Step 3 queries title 81234576, while the issue is for 81234567. The last two digits are transposed, so the agent read the status of a different title, saw DELIVERED, and followed the runbook to close. This is context loss in a long prompt or a free-text copy of an id. In the MAST failure taxonomy it sits under task verification: nothing checked that the evidence belonged to the issue.
 
@@ -76,25 +137,40 @@ Step 4 returned a 429, yet the close reason says "redelivery requested as backup
 
 Fixes, in order of leverage. (1) Bind ids from structured state: tools take the issue id and resolve the title id server side, so the model never retypes it. The cheaper alternative, a validator that rejects any title id not in the issue, works too but leaves the model a way to fail. (2) Typed tool errors: a 429 raises a retryable error that the orchestrator handles with backoff, and the agent cannot call close_issue while a write is pending or failed. (3) A post-condition before close: rerun the original health check on the issue's own title and region, and close only if it passes. (4) Rewrite the runbook line so "close as stale" requires the check itself to pass.
 
-Proving it. Turn this trace into a replay case from archived inputs, then add mutations: transposed ids, 429 and 500 on every write tool, and stale-check cases where closing is correct. Grade with code checks, because each question has an exact answer. Did every tool call use the issue's title id, did any claim of success follow an error, and did close_issue run only after a passing recheck. Gate on zero violations, and track two numbers in production: the claim-versus-verified mismatch rate and the reopen rate within 72 hours of an auto-close.
+Verify: Turn this trace into a replay case from archived inputs, then add mutations: transposed ids, 429 and 500 on every write tool, and stale-check cases where closing is correct. Grade with code checks, because each question has an exact answer. Did every tool call use the issue's title id, did any claim of success follow an error, and did close_issue run only after a passing recheck. Gate on zero violations, and track two numbers in production: the claim-versus-verified mismatch rate and the reopen rate within 72 hours of an auto-close.
+
+Pitfalls: Blaming the model and editing the prompt only; trusting the close reason as a summary of what happened; testing the fix on this one trace.
 
 Why this is likely: Netflix job listing and engineering blog. The listing asks you to "analyze production failures and improve model and workflow reliability", and Netflix's Pensive AI post describes trace-level failure diagnosis with outputs that must resolve to real evidence.
 
+</details>
+
 ### Data foundations and planning
+
+<a id="q4"></a>
 
 #### Q4. Model the data behind launch triage: titles, per-region launch windows, checks, issues, and the issue lifecycle (open, deduped, auto-remediated, escalated, closed, reopened). Then write the query for open high-severity issues on titles launching in the next 48 hours.
 
-Start from the questions the data must answer: what is broken, for which title and region, how close to launch, who owns it, and what happened to it. Then pick the grain of each table.
+Round: Technical screen (data modeling, reported in IC loops). AI policy: Unknown. Type: Build. Difficulty: Medium. Topic: Data modeling and SQL.
+
+<details>
+<summary>Show answer</summary>
+
+Task: Design tables and an enforced lifecycle for launch issues, then write and test the 48-hour high-severity query.
+
+What they grade: table grain; history plus a fast projection; region-aware joins; a tested query.
+
+Approach: Start from the questions the data must answer: what is broken, for which title and region, how close to launch, who owns it, and what happened to it. Then pick the grain of each table.
 
 Entities. title (id, kind, tier). launch_window, one row per title and region with launch_at in UTC, because a title launches at different times across 190+ countries. check_run, one append-only row per execution, with the catalog snapshot version it read, so results can be replayed. issue, the deduplicated unit of work: title, region, check, severity, current state, and root_issue_id pointing at the issue it was merged into. issue_event, an append-only log of transitions with actor (rule, agent, operator), reason, and time.
 
 Lifecycle. Allowed transitions live in one map that code enforces. A deduped issue points at its root, and work happens on the root. A reopen after auto-remediation is the most valuable row in the system, because it is an audited failure of the automation (Q12).
 
-Two designs for state. Pure event sourcing (fold issue_event to get state) gives perfect history but makes the hot query scan events. A mutable state column alone is fast but loses history. Keeping both wins. The log is the source of truth and issue.state is a projection written in the same transaction, so the 48-hour query reads one indexed column and the log feeds evaluation and audits.
+Alternatives: Two designs for state. Pure event sourcing (fold issue_event to get state) gives perfect history but makes the hot query scan events. A mutable state column alone is fast but loses history. Keep both. The log is the source of truth and issue.state is a projection written in the same transaction, so the 48-hour query reads one indexed column and the log feeds evaluation and audits.
 
 Partitioning. check_run is the big table, about 200,000 failures a day plus passes, so partition it by day and cluster by title_id; old partitions move to cheap storage. issue is small (thousands open), so index (state, severity) and (title_id, region). Partitioning issue by launch date looks tempting but breaks whenever a launch date moves, which is common. Hash by title_id in the streaming layer instead, where a tentpole's load must spread.
 
-The query joins on region as well as title, so a title launching in Mexico tomorrow does not pull in a Japan issue for next month. Tested with sqlite3:
+Verify: The query joins on region as well as title, so a title launching in Mexico tomorrow does not pull in a Japan issue for next month. Tested with sqlite3:
 
 ```python
 import sqlite3
@@ -171,11 +247,26 @@ assert db.execute("SELECT COUNT(*) FROM issue_event WHERE issue_id=6").fetchone(
 print("q4 ok")
 ```
 
+Pitfalls: Joining on title only; partitioning issues by launch date, which moves; letting any state jump to any other state.
+
 Why this is likely: Candidate report (Reddit L5 IC loop, about Aug 2026) describes a data modeling round; reported for ICs, not confirmed for this EM role.
+
+</details>
+
+<a id="q5"></a>
 
 #### Q5. One quarter, two pods. Launch Ops wants auto-remediation of setup issues, a partner team wants localization readiness checks, and your engineers want to pay down eval-harness debt. How do you prioritize, what do you cut, and how do you say no?
 
-Put every ask in one unit before debating. Here that unit is operator-hour equivalents: hours saved per week once live, plus escaped launch defects avoided, each priced at an agreed cost (start at 80 operator hours for incident handling, partner rework and member impact). Then add the dependency. Auto-remediation needs an eval gate before it ships, so the harness work comes first.
+Round: Onsite people and leadership. AI policy: Unknown. Type: Concept plus code. Difficulty: Medium. Topic: Roadmap prioritization.
+
+<details>
+<summary>Show answer</summary>
+
+Task: Choose a quarter plan across three competing asks with fixed capacity, explain the cut, and communicate the no.
+
+What they grade: one common unit for value; dependencies respected; sensitivity to a soft input; a clear written no.
+
+Approach: Put every ask in one unit before debating. Here that unit is operator-hour equivalents: hours saved per week once live, plus escaped launch defects avoided, each priced at an agreed cost (start at 80 operator hours for incident handling, partner rework and member impact). Then add the dependency. Auto-remediation needs an eval gate before it ships, so the harness work comes first.
 
 Options in pod-weeks (two pods for 13 weeks gives about 24 after on-call and holidays): harness 6; auto-fix for Tier 0 classes 8, or Tier 0 and 1 classes 14; localization checks for the top 5 languages 4, or all 12 languages 10. The script below scores every plan that fits.
 
@@ -212,19 +303,34 @@ print("defect=100h:", top100)
 print("q5 ok")
 ```
 
-Reading the result. At 80 hours per defect, harness plus Tier 0 and 1 auto-fix plus top-5 localization wins by 35 points out of about 1,200. At 100 hours, the order flips. A 3% gap that flips on one soft input is a tie, so judgment decides. I would pick harness, Tier 0 auto-fix, and full localization: Tier 1 autonomy in the same quarter the gate ships is the riskier bet, and the partner commitment is harder to recover than operator hours.
+Verify: At 80 hours per defect, harness plus Tier 0 and 1 auto-fix plus top-5 localization wins by 35 points out of about 1,200. At 100 hours, the order flips. A 3% gap that flips on one soft input is a tie, so judgment decides. I would pick harness, Tier 0 auto-fix, and full localization, because Tier 1 autonomy in the same quarter the gate ships is the riskier bet and the partner commitment is harder to recover than operator hours.
 
-Alternatives. RICE ranks items one at a time and hides the harness dependency. Cost of delay (WSJF) is better when deadlines differ, so use it if the partner has a dated launch. Letting the most senior stakeholder pick is fast and loses trust in the other two teams.
+Alternatives: RICE ranks items one at a time and hides the harness dependency. Cost of delay (WSJF) is better when deadlines differ, so use it if the partner has a dated launch. Letting the most senior stakeholder pick is fast and loses trust in the other two teams.
 
 Saying no. Write a one-page note to Launch Ops, the partner team and engineering: what we will do, what we will not (Tier 1 auto-fix this quarter), the numbers, what would change the call (a higher defect cost, the harness landing early), and a week-7 checkpoint. Ask Launch Ops to challenge the hours estimate before it is final.
 
+Pitfalls: Ranking asks one at a time and missing the eval-gate dependency; treating a 3% score gap as decisive; saying no without a checkpoint.
+
 Why this is likely: Exponent's Netflix EM candidate report (interview Dec 2025, medium confidence) lists roadmap prioritization among the people rounds, and the listing asks you to partner with Product Management, Launch Operations, Partner Integration Managers and Engineering on roadmaps.
+
+</details>
 
 ### Evaluation pipelines and LLM judges
 
+<a id="q6"></a>
+
 #### Q6. Design the evaluation pipeline that gates every change to the triage agent: model, prompt, tool, retrieval, or rule changes.
 
-Every change that alters what the model sees counts as a model change. Netflix's Pensive team makes this point. Log trimming or a source-system format change can move quality as much as a new model.
+Round: Onsite system design. AI policy: Unknown. Type: Design. Difficulty: Hard. Topic: Evaluation pipeline and release gates.
+
+<details>
+<summary>Show answer</summary>
+
+Task: Design the offline and online evaluation that every change to the triage agent must pass before and after release.
+
+What they grade: datasets with clear roles; reproducible inputs; per-class gates; an online layer after merge.
+
+Approach: Every change that alters what the model sees counts as a model change. Netflix's Pensive team makes this point. Log trimming or a source-system format change can move quality as much as a new model.
 
 Datasets. (1) Regression floor: cases where frozen deterministic rules fire, used as reference labels. They are imperfect ground truth, and they hold the AI path to at least the rules' accuracy on the cases the rules already handle. (2) Golden set: 500 to 1,000 expert-labeled issues stratified by class, content type, region, and severity, enriched with hard and boundary cases well above their production prevalence. (3) Historical resolutions mined from tickets and chat threads, with an LLM drafting reference resolutions that experts approve. (4) Adversarial set: injection strings in partner metadata, conflicting specs, missing tools.
 
@@ -236,15 +342,30 @@ Gates. On each pull request, deploy to an isolated preview environment and run t
 
 Online layer. Shadow mode first, then a canary on a fraction of issue classes or regions (Q10). Online metrics: operator acceptance and override rates, time from detection to resolution, escaped defects found after launch, and cost per resolved issue.
 
-Hard parts. Labels go stale as rules and specs change, so assign owners and a refresh cadence. Class imbalance means a 1% overall regression can be a 30% regression on a rare, severe class, so gate per class. Eval cost grows with judge calls, so cache judge results by input hash.
+Risks: Labels go stale as rules and specs change, so assign owners and a refresh cadence. Class imbalance means a 1% overall regression can be a 30% regression on a rare, severe class, so gate per class. Eval cost grows with judge calls, so cache judge results by input hash.
 
 Strict gates slow iteration. Pair them with a fast local loop on a 100-case smoke set so engineers get a signal within minutes and the full suite runs in CI.
 
+Pitfalls: Gating on one overall score; replaying against live systems whose state has changed; LLM judges nobody has checked against humans.
+
 Why this is likely: Netflix job listing and engineering blog. The listing leads with "scalable evaluation pipelines", and the Pensive AI post describes PR-level eval gating, archived inputs, and rule-based regression floors.
+
+</details>
+
+<a id="q7"></a>
 
 #### Q7. You want an LLM judge to block or approve automated launch fixes. How do you build it and keep it trustworthy?
 
-Netflix's published judge lifecycle is a strong template: birth, training, deployment, monitoring, with humans throughout.
+Round: Onsite technical leadership depth. AI policy: Unknown. Type: Design. Difficulty: Hard. Topic: LLM-as-judge lifecycle.
+
+<details>
+<summary>Show answer</summary>
+
+Task: Build an LLM judge that gates automated fixes, validate it against humans, and keep it trustworthy as content changes.
+
+What they grade: binary criteria from experts; fail recall weighted up; rationales checked as well as labels; a weekly human audit with a drift rule.
+
+Approach: Follow Netflix's published judge lifecycle. It has four stages (birth, training, deployment, monitoring), with humans involved in each.
 
 Birth. Domain experts (launch operators, spec owners) write must-have pass/fail criteria and labeling guidelines. Use binary labels per criterion. The synopsis team moved from a 1 to 4 Likert scale to binary and ran eight calibration rounds of about 50 items to lift rater agreement to about 80%. Build a benchmark of roughly 600 to 1,000 items from expert-crafted failures, LLM-synthesized boundary cases that humans then label, and sampled production outputs. Keep classes near balance (the recommendation-explanation benchmark was about 54% fail), because failures are rare in production and you need enough of them to measure fail recall. Every fail label carries a written rationale.
 
@@ -256,15 +377,30 @@ Deployment. Use the judge as both a gate and a critic: its rejection reason goes
 
 Monitoring. Each week, sample about 300 judged items stratified by outcome (passed, passed after retry, blocked) and biased toward new content types. Have at least three raters label each one, and require the judge's metric to be at least the mean of individual rater metrics minus two rater standard deviations. That band widens on hard weeks, so the bar drops in weeks that humans also find hard. Check new segments separately. A breach triggers re-tuning, a human approves the new rubric, and the old rubric stays available for rollback.
 
+Pitfalls: A single judge prompt for every criterion; a benchmark with too few failures to measure fail recall; tuning the judge on the monitoring sample.
+
 Why this is likely: Netflix engineering blog and research paper. Netflix published this judge lifecycle, and the listing asks for guardrails and human evaluation integrated into continuous improvement.
+
+</details>
+
+<a id="q8"></a>
 
 #### Q8. The new agent version scores 87.4% on the 600-item golden set against 85.1% for the current one. Do you ship it? Walk through the statistics.
 
-A 2.3 point gap on 600 items may be noise. The standard error of one accuracy near 0.86 is sqrt(0.86 x 0.14 / 600), about 0.014, so independent 95% intervals are roughly plus or minus 2.8 points and overlap heavily. Both versions ran on the same items, though, so a paired test is the right comparison.
+Round: Onsite technical leadership depth. AI policy: Unknown. Type: Concept plus code. Difficulty: Medium. Topic: Paired significance testing for evals.
 
-Pair the test. Build per-item correctness for both versions. Only discordant items carry signal: b = items the new version gets right and the old one wrong, c = the reverse. McNemar's test uses chi-square = (|b - c| - 1)^2 / (b + c), or an exact binomial test on b out of b + c at p = 0.5. If b = 40 and c = 26, chi-square = 13^2 / 66, about 2.56, giving p of about 0.11, so the difference is not significant. A paired bootstrap (resample item indices once and apply them to both versions) gives a confidence interval on the difference that is usually much narrower than the unpaired one, because shared item difficulty cancels.
+<details>
+<summary>Show answer</summary>
 
-Check what the aggregate hides.
+Task: Decide whether a 2.3 point gain on a shared 600-item set is real, and what else must hold before shipping.
+
+What they grade: choosing a paired test; working McNemar by hand; per-class and cost-weighted checks; a power estimate.
+
+Approach: A 2.3 point gap on 600 items may be noise. The standard error of one accuracy near 0.86 is sqrt(0.86 x 0.14 / 600), about 0.014, so independent 95% intervals are roughly plus or minus 2.8 points and overlap heavily. Both versions ran on the same items, though, so a paired test is the right comparison.
+
+Numbers: Pair the test. Build per-item correctness for both versions. Only discordant items carry signal: b = items the new version gets right and the old one wrong, c = the reverse. McNemar's test uses chi-square = (|b - c| - 1)^2 / (b + c), or an exact binomial test on b out of b + c at p = 0.5. If b = 40 and c = 26, chi-square = 13^2 / 66, about 2.56, giving p of about 0.11, so the difference is not significant. A paired bootstrap (resample item indices once and apply them to both versions) gives a confidence interval on the difference that is usually much narrower than the unpaired one, because shared item difficulty cancels.
+
+Pitfalls: Check what the aggregate hides.
 
 - Per-class results. The golden set is difficulty-enriched and class-balanced, so its accuracy differs from the production error rate. Reweight per-class results by production prevalence and by cost (operator minutes, severity) before deciding.
 - Rare, severe classes. A gain on common setup issues can mask a loss on live-event or rights issues. Gate per class on fail recall with a one-sided test. With small n, use exact intervals (Wilson or Clopper-Pearson) in place of normal approximations.
@@ -273,11 +409,37 @@ Check what the aggregate hides.
 - Nondeterminism. Run each version 3 to 5 times and include run-to-run variance in the bootstrap.
 - Power. To detect a 2 point paired difference you need enough discordant pairs. If disagreement runs at about 10%, that means roughly 1,500 to 2,000 items, so grow the set or accept that offline evaluation alone cannot resolve gains this small.
 
+```python
+import math
+
+def mcnemar(b, c):
+    """b: new right, old wrong. c: old right, new wrong."""
+    chi = (abs(b - c) - 1) ** 2 / (b + c)          # continuity corrected
+    p_chi = math.erfc(math.sqrt(chi / 2))           # chi-square, 1 df
+    n, k = b + c, min(b, c)
+    p_exact = min(1.0, 2 * sum(math.comb(n, i) for i in range(k + 1)) / 2 ** n)
+    return chi, p_chi, p_exact
+
+chi, p_chi, p_exact = mcnemar(40, 26)
+assert abs(chi - 2.56) < 0.01 and 0.10 < p_chi < 0.12 and 0.10 < p_exact < 0.12
+_, _, p_big = mcnemar(80, 52)                       # same ratio, twice the discordant items
+assert p_big < 0.02
+print(f"chi2={chi:.2f} p={p_chi:.3f} exact={p_exact:.3f} doubled_p={p_big:.4f}")
+```
+
+Verify: the check reproduces the hand calculation (chi-square 2.56, p about 0.11 by both the approximation and the exact test) and shows why more data helps: the same 40 to 26 ratio on twice the discordant items gives p below 0.02.
+
 Decision. If the paired interval excludes zero, no gated slice regresses, and cost and latency hold, ship to shadow and canary (Q10). Otherwise let shadow mode on live traffic, with far more volume, settle it.
 
 Why this is likely: Netflix job listing (offline metrics, online experiments, human evaluation) and Netflix's sequential testing paper (arXiv 2205.14762); no candidate report confirms a statistics round for this EM role.
 
+</details>
+
+<a id="q9"></a>
+
 #### Q9. (AI assistant allowed, as in the AI-assisted coding round reported in recent Netflix IC onsites; not confirmed for EM loops) The assistant wrote this gate that decides whether an LLM judge may block launch fixes. Review it like a pull request, fix it, and show the tests.
+
+Round: AI-assisted coding (reported in IC loops, not confirmed for managers). AI policy: Provided (CodeSignal assistant). Type: Review. Difficulty: Medium. Topic: Reviewing AI-generated eval code.
 
 ```python
 # judge_gate_ai.py, generated by the assistant from the prompt:
@@ -309,12 +471,19 @@ def gate(judge, human, min_recall=0.85):
     return rec >= min_recall
 ```
 
-Read the spec first: block unless fail recall is reliably at or above 0.85. Then read the diff line by line before running anything. Five defects:
+<details>
+<summary>Show answer</summary>
+
+Task: Review the assistant's judge gate against the spec, fix every defect, and prove the fix with tests.
+
+What they grade: reading the diff before running it; catching all five defects; a gate that uses the lower bound; tests that would fail on the old code.
+
+Approach: Read the spec first: block unless fail recall is reliably at or above 0.85. Then read the diff line by line before running anything. Five defects:
 
 1. Hallucinated API. sklearn.metrics has cohen_kappa_score but no wilson_interval, so the module fails on import. Write the Wilson bound yourself, about eight lines.
 2. Security. yaml.load with the full Loader on a rater-uploaded file can construct arbitrary Python objects. Use JSON or yaml.safe_load.
 3. Off-by-one. random.randint is inclusive, so randint(0, n) can return n and raise IndexError, or silently skew the resample if the list is padded. Use randrange(n).
-4. Missing edge case. With no human fails, fail_recall divides by zero. The obvious patch, returning 1.0, is worse: the gate passes vacuously.
+4. Missing edge case. With no human fails, fail_recall divides by zero. Returning 1.0 there is worse, because the gate then passes vacuously.
 5. Logic. gate computes the interval and then ignores it, comparing the point estimate. With 52 of 60 fails caught (0.867) it passes, though the Wilson lower bound is about 0.76.
 
 Fixed version, standard library only:
@@ -364,7 +533,7 @@ def gate(judge, human, min_recall_lb=0.85, min_fails=30):
     return wilson(k, n)[0] >= min_recall_lb
 ```
 
-Tests, all passing:
+Verify: Tests, all passing:
 
 ```python
 import json, os, tempfile
@@ -401,39 +570,69 @@ print("kappa", round(cohen_kappa(judge, human), 3), "wilson58/60", [round(x, 3) 
 print("q9 ok")
 ```
 
-How to use the assistant here. Prompt one: "Using only the standard library, implement Wilson and Cohen's kappa." Prompt two: "Write failing tests for: no human fails, 52 of 60, 58 of 60, the 95/5 skew example." Check each diff for new imports, changed signatures, and whether the gate reads the bound. A wrong output to catch: asked to fix the zero division, the assistant returned 1.0 recall when there are no fails, and the "no human fails" test caught it because the gate then passed. The rule that wins is the lower bound plus a 30-fail minimum. Compare two alternatives. The point estimate passes by luck on small samples, so it loses. Clopper-Pearson is also valid and slightly more conservative (lower bound 0.885 against Wilson's 0.886 at 58 of 60), so either works; Wilson wins only because it is shorter to write and explain under time pressure.
+How to use the assistant here. Prompt one: "Using only the standard library, implement Wilson and Cohen's kappa." Prompt two: "Write failing tests for: no human fails, 52 of 60, 58 of 60, the 95/5 skew example." Check each diff for new imports, changed signatures, and whether the gate reads the bound. A wrong output to catch: asked to fix the zero division, the assistant returned 1.0 recall when there are no fails, and the "no human fails" test caught it because the gate then passed. Gate on the lower bound plus a 30-fail minimum. The point estimate passes by luck on small samples. Clopper-Pearson is also valid and slightly more conservative (lower bound 0.885 against Wilson's 0.886 at 58 of 60), so either works; Wilson is shorter to write and explain under time pressure.
+
+Pitfalls: Accepting the assistant's 1.0 recall when there are no fails; keeping yaml.load because the file looks trusted; checking the point estimate instead of the bound.
 
 Why this is likely: candidate reports on Blind and 1point3acres. They describe a Netflix AI-assisted CodeSignal round judged on how you review and push back on the assistant, and the listing names human evaluation and guardrails.
 
+</details>
+
 ### Rollout, calibration and monitoring
+
+<a id="q10"></a>
 
 #### Q10. Design the shadow mode and canary rollout for moving an issue class from human-handled to auto-resolved.
 
-Shadow mode. The new system receives live issues, produces a classification and a proposed action, and takes no action. Log the proposal, its confidence, evidence, and the eventual operator action, linked by issue id. Compare the two at the end of each day. Shadow mode measures agreement with operators, and operators make mistakes too, so sample disagreements for expert adjudication and track three buckets (model right, operator right, both defensible). Run shadow until each target class has enough disagreements adjudicated to bound the model's error (Q12), typically 2 to 4 weeks. Hide the model's suggestion from operators during shadow, because seeing it inflates agreement.
+Round: Onsite system design. AI policy: Unknown. Type: Design. Difficulty: Hard. Topic: Shadow mode and canary rollout.
+
+<details>
+<summary>Show answer</summary>
+
+Task: Plan how one issue class moves from human-handled to auto-resolved, with shadow, canary, metrics, statistics and exit criteria.
+
+What they grade: what shadow can and cannot show; title-level randomization; behavioral guardrail metrics; sequential tests that tolerate peeking.
+
+Approach: Shadow mode. The new system receives live issues, produces a classification and a proposed action, and takes no action. Log the proposal, its confidence, evidence, and the eventual operator action, linked by issue id. Compare the two at the end of each day. Shadow mode measures agreement with operators, and operators make mistakes too, so sample disagreements for expert adjudication and track three buckets (model right, operator right, both defensible). Run shadow until each target class has enough disagreements adjudicated to bound the model's error (Q12), typically 2 to 4 weeks. Hide the model's suggestion from operators during shadow, because seeing it inflates agreement.
 
 Netflix's Data Canary talk notes that shadow traffic cannot surface emergent failures, the effects that appear only when the change acts. A wrong metadata fix that never executes in shadow cannot break a downstream personalization row.
 
-Canary. Let the system act on a randomized slice. The randomization unit matters: randomize by title (or title and region) instead of by event, so each title is fixed entirely by humans or entirely by the agent. Use sticky assignment so a title stays in its arm across retries. Exclude tier-1 titles and launches inside a 48-hour window from the first stage. Ramp: 1% of eligible titles, then 5%, 25%, 50%, 100%, with a minimum dwell time at each stage.
+Canary. Let the system act on a randomized slice. Randomize by title (or title and region) instead of by event, so each title is fixed entirely by humans or entirely by the agent. Use sticky assignment so a title stays in its arm across retries. Exclude tier-1 titles and launches inside a 48-hour window from the first stage. Ramp: 1% of eligible titles, then 5%, 25%, 50%, 100%, with a minimum dwell time at each stage.
 
 Metrics. Primary guardrails: escaped defects per 1,000 titles (found after launch), rollback rate, and time from detection to resolution. Behavioral health metrics matter more than system metrics. The Data Canary team found that streaming starts per second caught catalog corruption more reliably than latency or error rates. The launch equivalent is impressions and plays for affected titles in their first 24 hours, compared with forecast.
 
 Statistics. A canary is monitored continuously, and repeated fixed-n tests on accumulating data inflate false alarms (peeking). Netflix's canary work uses anytime-valid sequential tests and confidence sequences, which keep type I error controlled no matter how often you look and stop early on large regressions. Pre-register the guardrail metrics, the minimum detectable regression, and automatic rollback rules.
 
-Exit criteria to 100%: no guardrail breach, audited precision upper bound below target, operator override rate stable, and cost per issue within budget. Keep a holdout of about 5% of titles human-handled for a quarter, to measure long-run impact and catch slow drift.
+Verify: Exit criteria to 100%: no guardrail breach, audited precision upper bound below target, operator override rate stable, and cost per issue within budget. Keep a holdout of about 5% of titles human-handled for a quarter, to measure long-run impact and catch slow drift.
+
+Pitfalls: Randomizing by event so one title gets mixed handling; showing the model's suggestion to operators during shadow; stopping a canary on a fixed-n test you checked daily.
 
 Why this is likely: Netflix research paper and conference talk. Netflix has published on sequential canary testing and data canaries, and the listing asks for rollout plans and online experiments.
 
+</details>
+
+<a id="q11"></a>
+
 #### Q11. How do you set the confidence threshold at which the agent acts on its own, and why is "confidence above 0.9" not enough?
 
-Raw LLM confidence is not a probability. Verbalized confidence ("I am 95% sure") and token log-probabilities are both usually miscalibrated, and calibration shifts with prompt, model, and content type. Calibrate before setting any threshold.
+Round: Onsite technical leadership depth. AI policy: Unknown. Type: Design. Difficulty: Medium. Topic: Calibration and abstention thresholds.
+
+<details>
+<summary>Show answer</summary>
+
+Task: Set per-class thresholds for autonomous action from calibrated scores and expected cost, with a statistical guarantee.
+
+What they grade: knowing raw LLM confidence is miscalibrated; a calibration method and metric; thresholds from a risk-coverage curve; shift and feedback-loop handling.
+
+Approach: Raw LLM confidence is not a probability. Verbalized confidence ("I am 95% sure") and token log-probabilities are both usually miscalibrated, and calibration shifts with prompt, model, and content type. Calibrate before setting any threshold.
 
 Get a usable score. Options, from cheapest up: self-consistency (sample k = 5 answers at temperature above 0 and use the agreement rate), log-probability of the chosen label for classification-style outputs, or a small trained verifier (logistic regression or gradient boosting) over features such as self-consistency, retrieval scores, whether rules agreed, issue class, and partner. The verifier is often best because it learns where the LLM is overconfident.
 
 Calibrate it. Fit isotonic regression or Platt scaling on a held-out labeled set, per issue class if the data allows. Measure expected calibration error, ECE = sum over bins m of (|B_m| / n) x |acc(B_m) - conf(B_m)|, with about 10 bins, and draw reliability diagrams per segment. Recalibrate on a schedule, because a model or prompt change resets calibration.
 
-Choose thresholds by expected cost. Plot a risk-coverage curve per class: sort by calibrated score and, for each threshold, compute coverage (the share acted on automatically) and selective risk (the error rate among those). Set the threshold where expected cost is lowest: cost(t) = error rate(t) x coverage(t) x cost of a wrong action + (1 - coverage(t)) x cost of a human review. A wrong metadata edit on a long-tail title may cost 10 minutes of cleanup, while a wrong launch hold on a tentpole costs much more, so thresholds differ by class and title tier. Add a statistical guarantee: choose t so that the upper confidence bound of selective risk is below the target, for example below 1% at 95% confidence. Conformal risk control formalizes this.
+Numbers: Choose thresholds by expected cost. Plot a risk-coverage curve per class: sort by calibrated score and, for each threshold, compute coverage (the share acted on automatically) and selective risk (the error rate among those). Set the threshold where expected cost is lowest: cost(t) = error rate(t) x coverage(t) x cost of a wrong action + (1 - coverage(t)) x cost of a human review. A wrong metadata edit on a long-tail title may cost 10 minutes of cleanup, while a wrong launch hold on a tentpole costs much more, so thresholds differ by class and title tier. Add a statistical guarantee: choose t so that the upper confidence bound of selective risk is below the target, for example below 1% at 95% confidence. Conformal risk control formalizes this.
 
-Watch for these failures.
+Pitfalls: Three failures show up in production.
 
 - Shift. Calibration fit on series metadata can fail on games or live events. Monitor the score distribution and abstention rate per segment, and route out-of-distribution inputs (new partner, new format) to humans regardless of score.
 - Feedback loops. Once the agent acts on high-confidence cases, humans see only the low-confidence ones, so new labels skew. Keep a random audit of auto-actions (Q12).
@@ -441,7 +640,13 @@ Watch for these failures.
 
 Why this is likely: Netflix job listing and Netflix engineering blog, not a candidate report. The listing asks for guardrails, earning operator trust and a human-in-the-loop handoff; the OWASP LLM prompt injection cheat sheet frames the guardrail side, and Netflix's human-augmenting agentic workflow post shows the trust problem. Both come down to calibrated abstention.
 
+</details>
+
+<a id="q12"></a>
+
 #### Q12. (AI assistant allowed, as in the CodeSignal AI-assisted round reported in 2026 IC loops; not confirmed for EM) This audit job promoted the rights-change class to full autonomy after 0 errors in 30 audited actions, and reported a 5.2% overall error rate. Debug it, then extend the report with a per-stratum required sample size for a zero-error promotion and a promote or hold decision per stratum.
+
+Round: AI-assisted coding (reported in IC loops, not confirmed for managers). AI policy: Provided (CodeSignal assistant). Type: Debug. Difficulty: Hard. Topic: Audit sampling and promotion statistics.
 
 ```python
 # audit_old.py
@@ -472,7 +677,14 @@ metadata_low    20000      200      12   0.088   0.100   PASS
 overall error rate: 0.052
 ```
 
-Three bugs. Each one leads to a wrong decision while the job runs cleanly.
+<details>
+<summary>Show answer</summary>
+
+Task: Find why the audit job promoted a class on 0 of 30 errors and misreported the overall rate, fix it, and add a per-stratum report.
+
+What they grade: spotting the zero-width Wald bound; a uniform sample; volume weighting; an extension that reuses tested helpers.
+
+Approach: Three bugs. Each one leads to a wrong decision while the job runs cleanly.
 
 First, upper_bound is a Wald interval. At zero errors p(1 - p) is zero, so the bound is zero and any sample size passes. The exact one-sided Clopper-Pearson bound at 0 of 30 is about 9.5%, so the data only rules out rates above 9.5%, not 1%. To prove a rate under 1% with zero errors you need 299 samples (rule of three: about 3 / n). One error in 299 gives a bound near 1.6%, which still fails.
 
@@ -530,6 +742,8 @@ def stratum_report(results, targets, alpha=0.05):
     return report
 ```
 
+Verify: these tests fail on audit_old.py and pass on audit.py.
+
 ```python
 from audit_old import stratum_passes as bug_pass, overall_rate as bug_rate
 from audit import cp_upper, n_zero_fail, draw_sample, stratum_passes, overall_rate, stratum_report
@@ -565,13 +779,28 @@ print("q12 ok")
 
 Delegation plan for the assistant: ask for the exact bound with stdlib only, then ask it to write the four tests above before touching the code. Check the diff for bisection direction and that alpha is one-sided. A wrong output to catch: the assistant's first weighted estimator divided by sampled counts again, just renamed, and the pooled-versus-weighted test failed. Alternatives: Wilson is close to exact here but less conservative at zero errors; a Bayesian beta posterior is fine for dashboards, but a gate should keep a frequentist guarantee that partners can audit. For the extension, have the assistant reuse cp_upper and n_zero_fail instead of writing new math, and test the report on this week's numbers: rights shows hold with 299 required, metadata shows promote at a 9.5% bound against a 10% target, close enough to flag. Roll back the rights promotion now and rerun with 299 samples.
 
+Pitfalls: Trusting a bound that reads 0.000; sampling from the review queue because it is convenient; letting the assistant rename the pooled estimator instead of fixing it.
+
 Why this is likely: candidate reports on 1point3acres (L6 schedule, 2026-07-16) and Blind (2026-07-14) describe a Netflix AI-assisted CodeSignal round where you extend a real codebase; medium confidence, IC loops only. The domain comes from Netflix's judge lifecycle post, which describes a weekly stratified human audit.
+
+</details>
 
 ### Leading the team and the change
 
+<a id="q13"></a>
+
 #### Q13. Launch Operations has run this workflow by hand for years. How do you introduce automation, earn operator trust, and design the human-in-the-loop handoff?
 
-Start where operators lose time. Spend the first two to three weeks shadowing shifts and pulling ticket data: volume, minutes per class, rework, and which issues cause launch-day escalations. Netflix's title observability team made the same move. They defined a shared term, "title health", and categorized issues before building, which found setup issues common and easy and algorithm issues rare and hard. Agree with operations leadership on two or three shared outcome metrics, such as hours per launch, escaped defects, and on-time launch rate, so both teams win or lose together.
+Round: Onsite people and leadership, or a role-play round. AI policy: Unknown. Type: Behavioral. Difficulty: Medium. Topic: Change management and human-in-the-loop handoff.
+
+<details>
+<summary>Show answer</summary>
+
+Task: Introduce automation into a long-running manual workflow so operators trust it, and design the handoff between agent and human.
+
+What they grade: starting from operator data; staged autonomy with visible scorecards; a detailed handoff; a real story where operators changed your plan.
+
+Approach: Start where operators lose time. Spend the first two to three weeks shadowing shifts and pulling ticket data: volume, minutes per class, rework, and which issues cause launch-day escalations. Netflix's title observability team made the same move. They defined a shared term, "title health", and categorized issues before building, which found setup issues common and easy and algorithm issues rare and hard. Agree with operations leadership on two or three shared outcome metrics, such as hours per launch, escaped defects, and on-time launch rate, so both teams win or lose together.
 
 Stage autonomy, and make each stage visible.
 
@@ -582,15 +811,30 @@ Stage autonomy, and make each stage visible.
 
 Design the handoff in detail. When the system escalates, the human should get the issue summary, the evidence with links to source records, what the agent already tried, and its confidence, so they pick up where the agent stopped. Make overrides cheap and structured, because overrides become training and evaluation data. Pensive's team sends every thumbs-down to a Slack channel during business hours and fixes the rough edges quickly. Operators trust a system that visibly changes after their feedback.
 
-The human side. Say plainly how roles change: less copy-paste remediation, more partner escalation, spec authorship, and audit. Involve senior operators as rubric owners and paid labelers for the golden set. Their expertise becomes the ground truth, which is both accurate and respectful. Expect pushback, and treat it as signal. Bring a story where operators rejected a rollout, were right, and the threshold or scope changed because of it.
+The human side. Say plainly how roles change: less copy-paste remediation, more partner escalation, spec authorship, and audit. Involve senior operators as rubric owners and paid labelers for the golden set. Their expertise then becomes the ground truth. Expect pushback, and treat it as signal. Bring a story where operators rejected a rollout, were right, and the threshold or scope changed because of it.
 
-What you measure for adoption: acceptance rate per class, time to override, how often operators bypass the tool, and qualitative survey trends each quarter. Low adoption with high offline accuracy usually means the tool fits the workflow badly.
+Verify: What you measure for adoption: acceptance rate per class, time to override, how often operators bypass the tool, and qualitative survey trends each quarter. Low adoption with high offline accuracy usually means the tool fits the workflow badly.
+
+Pitfalls: Leading with the model instead of the workflow; measuring offline accuracy and ignoring adoption; treating operator pushback as resistance to manage.
 
 Why this is likely: Netflix job listing and manager interview guides. The listing explicitly requires "introducing automation into an established operational workflow, earning operator trust, designing the human-in-the-loop handoff", and guides say Netflix asks both retrospective and hypothetical leadership questions.
 
+</details>
+
+<a id="q14"></a>
+
 #### Q14. How would you build and run a team of ML scientists, analytics engineers, and data engineers for this charter, and how do you apply the keeper test?
 
-Shape the team from the work. The next 12 months need four capabilities: evaluation and judge science, agent and LLM engineering, data foundations and contracts (snapshots, labels, lineage), and measurement (impact attribution, dashboards, launch metrics). Map current people against these and hire for gaps. In applied AI teams the usual bottleneck is evaluation and data infrastructure more than modeling, so the first senior hire is often a data or evaluation engineer who builds the harness everyone else depends on.
+Round: Onsite people and leadership. AI policy: Unknown. Type: Behavioral. Difficulty: Medium. Topic: Team design, hiring and the keeper test.
+
+<details>
+<summary>Show answer</summary>
+
+Task: Shape, hire and run a mixed team of scientists, analytics engineers and data engineers, and apply the keeper test fairly.
+
+What they grade: team shape derived from the work; shared engineering standards; a concrete hiring bar per role; direct, timely performance calls.
+
+Approach: Shape the team from the work. The next 12 months need four capabilities: evaluation and judge science, agent and LLM engineering, data foundations and contracts (snapshots, labels, lineage), and measurement (impact attribution, dashboards, launch metrics). Map current people against these and hire for gaps. In applied AI teams the usual bottleneck is evaluation and data infrastructure more than modeling, so the first senior hire is often a data or evaluation engineer who builds the harness everyone else depends on.
 
 Structure. Organize around problem areas, such as setup issue triage, localization and asset readiness, and launch risk, each with a scientist, an analytics engineer, and a data engineer who own an outcome metric end to end. A small shared platform slice owns the eval harness, trace store, and tool registry, so every pod uses the same ones. Shared standards: code review for prompts and rubrics the same as for code, versioned datasets, eval gates in CI, an on-call rotation for production agents, and written incident reviews.
 
@@ -600,11 +844,26 @@ Running it. Netflix's "context, not control" applies here. Write the strategy me
 
 Keeper test. Ask it about every report at least each quarter, in writing, and then act on the answer. When the answer is drifting toward no, give direct, specific feedback early: the expectation, the gap, examples, and a time frame. Check first whether the gap comes from unclear context you set. If it is a fit problem, decide quickly and treat the person generously, because the memo frames a fast, respectful separation as fairer than a slow one. Apply the test to yourself too, and ask your reports and partners for upward feedback.
 
+Pitfalls: Hiring modelers first when evaluation and data are the bottleneck; using the keeper test as a threat; skipping the check on whether you set clear context.
+
 Why this is likely: Exponent's Netflix EM candidate report (interview Dec 2025, medium confidence) lists questions on managing high performers, jobs.netflix.com/culture (high confidence) defines the keeper test, and the listing asks you to "coach, hire and develop" this mix.
+
+</details>
+
+<a id="q15"></a>
 
 #### Q15. Tell me about an automated or ML-driven decision that went wrong in production. Then: which part of the Netflix culture memo do you disagree with, and how would that show up in how you run this team?
 
-Part one tests ownership and candor. Pick a real incident where your decision contributed, and structure it for a technical panel.
+Round: Recruiter screen and onsite people round. AI policy: Unknown. Type: Behavioral. Difficulty: Medium. Topic: Ownership of an AI failure and culture memo candor.
+
+<details>
+<summary>Show answer</summary>
+
+Task: Tell an owned story about an automated decision that failed, then disagree with one part of the culture memo and show how you would still work within it.
+
+What they grade: a specific incident with numbers; the decision that was yours; a changed default; a real, reasoned disagreement.
+
+Approach: Part one tests ownership and candor. Pick a real incident where your decision contributed, and structure it for a technical panel.
 
 1. Context in numbers: what the system did, the share of decisions automated, and the error rate you believed you had.
 2. The failure: how it was detected (a monitor, or a partner or member, which is worse) and the blast radius.
@@ -615,11 +874,15 @@ Part one tests ownership and candor. Pick a real incident where your decision co
 
 A fitting example: an automated fix to localized metadata passed offline evaluation on series but failed on a new content type the golden set lacked. Impressions for affected titles dropped while error rates stayed flat. The fix added per-segment gates.
 
-Part two tests whether you have read the memo closely enough to argue with it. Pick a tension you actually feel. For example, the keeper test pushes fast exits, while this team depends on operators and labelers telling you when the automation is wrong, which needs psychological safety. State the disagreement plainly. Applied too eagerly, the keeper test makes people hide bad news, and in a team whose job is catching errors that is costly. Then show you would still operate within it. Separate performance conversations from incident reviews, make reporting a model failure something you praise in public, and apply the keeper test to judgment and ownership while treating incidents as system failures. Close with what would change your mind.
+Part two tests whether you have read the memo closely enough to argue with it. Pick a tension you feel. For example, the keeper test pushes fast exits, while this team depends on operators and labelers telling you when the automation is wrong, which needs psychological safety. State the disagreement plainly. Applied too eagerly, the keeper test makes people hide bad news, and in a team whose job is catching errors that is costly. Then show you would still operate within it. Separate performance conversations from incident reviews, make reporting a model failure something you praise in public, and apply the keeper test to judgment and ownership while treating incidents as system failures. Close with what would change your mind.
 
 Give each part about four minutes, use specific numbers, and own the mistake without hedging. Expect the follow-up "what did your team disagree with you about".
 
+Pitfalls: Picking a failure caused only by someone else; a disagreement that is really praise; hedging on what you would change.
+
 Why this is likely: four-leaf.ai prep guide (Aug 2026), medium confidence, for the owned-mistake prompt; recruiter-screen reports (Reddit L5 2026, Reddit Staff SWE Sep 2026) for the memo disagreement question.
+
+</details>
 
 ## Prep checklist
 
