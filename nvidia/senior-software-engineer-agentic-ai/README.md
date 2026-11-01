@@ -4,710 +4,805 @@ Likely interview questions based on the public job listing, public hiring guides
 
 ## Likely interview loop (estimate)
 
-NVIDIA's process is decentralized. Candidates on Blind and interviewing.io describe the general shape as stable, while each team picks its own rounds and questions. Every interviewer usually comes from the hiring team, so expect the questions to track what the team builds. For this role that is agent runtime libraries: a Rust core with Python, Node.js and Go bindings, lifecycle events, middleware, and OpenTelemetry export.
+NVIDIA publishes the outline of its process, and each hiring team designs its own rounds inside it. The listing describes a senior engineer building open-source agent runtime libraries in Rust, Python, Go and Node.js, with async and event-driven systems, tool calls and cross-language APIs. NVIDIA's open-source NeMo Relay runtime (Rust core, Python and Node.js bindings, agent trajectory events) matches that scope, so the technical rounds below lean on that kind of work. That match is an inference.
 
-1. Recruiter call, about 30 minutes. Background, level fit (the listing has two level bands), and logistics. Referred candidates sometimes skip it.
-2. Technical screen, 45 to 60 minutes. Recent candidate reports describe practical Python more often than puzzles: a multi-part parsing problem, a "call a REST API, validate JSON, handle retries, timeouts and 429s" exercise, and top-N counting over a log stream. Expect a resume deep dive in the same call. NVIDIA says coding usually runs on HackerRank and that using unapproved tools such as ChatGPT disqualifies you.
-3. Hiring manager call, 30 to 60 minutes. Past projects, why agent infrastructure, and how you work with open-source users. Some candidates get this call first.
-4. Final loop, 4 to 5 rounds of 45 to 60 minutes. NVIDIA requires an in-person onsite before an offer. Based on reports, the mix is likely:
-   - Two coding rounds: one LeetCode-medium data structure problem (LRU cache and hashmap-from-scratch appear in NVIDIA reports) and one practical concurrency problem in Python or Rust (rate limiter, bounded executor, backpressure).
-   - A system architecture round built around the team's own project. One 2026 senior candidate reported exactly this format.
-   - A domain deep dive on runtime internals: asyncio and Tokio, PyO3 boundaries, context propagation, tracing overhead.
-   - A values or behavioral round. Some guides say NVIDIA's values come up in every round.
-5. Decision. NVIDIA says a few weeks. Candidates report two to three weeks of quiet after the onsite.
+1. Recruiter and hiring manager screen. 30 to 60 minutes by phone or video. Expect a close look at your past projects, such as "what was your own contribution?", and sometimes a design discussion about the team's project.
+2. Technical screen, one or two rounds. 45 to 60 minutes, live, in HackerRank or a shared editor, usually Python or C++. Recent reports describe practical, team-written problems: a multi-part Python parsing task, or calling a REST API and handling JSON, retries and rate limits. Other teams still use LeetCode easy to medium problems or a timed online assessment.
+3. Onsite panel, about 4 to 6 interviews of 30 to 60 minutes. NVIDIA says an in-person interview at an NVIDIA office comes before any offer, with coding on a whiteboard or an NVIDIA laptop; some teams run part of the panel by video. Expect:
+   - Practical coding, such as async and concurrency work, data structures built from scratch, or performance-aware code.
+   - System design that leans toward infrastructure: scheduling, isolation, observability, latency against throughput, failure handling.
+   - A domain round. For this team that likely means agent runtimes, language bindings, serialization cost and tracing.
+   - A hiring manager round on ownership, ambiguity and working across teams.
+4. Optional 15 minute Insider Chat with an employee. NVIDIA says it does not affect the decision.
+
+AI tools: NVIDIA's How We Hire page says that using unapproved outside tools such as ChatGPT during an interview disqualifies the candidate. No source shows an AI-assisted round at NVIDIA. Every question below assumes no AI, as at NVIDIA, so you write and check all the code yourself.
 
 ## Questions and answers
 
-### Async and concurrency coding
+### Practical coding (no AI, as at NVIDIA)
 
-#### Q1. Implement an async token-bucket rate limiter for LLM provider calls.
+#### Q1. Build a client for a device telemetry API that survives retries and rate limits
 
-Problem. Build a limiter that allows `rate` units per second, with bursts up to `capacity`. `acquire(cost)` waits until enough tokens exist and `try_acquire(cost)` returns immediately with a bool. Many coroutines share one limiter on a single asyncio event loop. Waiters should be served roughly in FIFO order. A cost can stand for one request or for an estimated token count when the provider limits tokens per minute.
+Spec given in the round: `GET /devices` returns a JSON list of `{"id", "temp_c", "util"}`. The service sometimes returns 503, drops connections, or returns 429 with a `Retry-After` header in seconds. Write `get_json(url)` and `hot_devices(devices, max_temp_c)`, which returns devices above the temperature limit, busiest first. Follow-ups: which errors do you retry, how do you test it without a network, and what happens with malformed JSON?
+
+I would separate I/O from logic first, because that is what makes the retry policy testable. `get_json` takes the transport function and the sleep function as parameters, so a test can script responses and record the delays without waiting.
+
+Retry policy: retry 429, 5xx and connection errors; fail fast on other 4xx, because a 400 or 404 will not fix itself. Use exponential backoff with full jitter (a random delay between 0 and min(cap, base x 2^attempt)), so a fleet of clients does not retry in lockstep. On 429 the server's `Retry-After` wins when it is longer. Malformed JSON on a 200 raises a clear error and is not retried, since the same body will come back.
 
 ```python
-import asyncio, time
+import json, random
 
-class TokenBucket:
-    def __init__(self, rate: float, capacity: float, clock=time.monotonic):
-        if rate <= 0 or capacity <= 0:
-            raise ValueError("rate and capacity must be positive")
-        self.rate = rate
-        self.capacity = capacity
-        self._tokens = capacity
-        self._clock = clock
-        self._last = clock()
-        self._lock = asyncio.Lock()   # FIFO fairness among waiters
+RETRYABLE = {429, 500, 502, 503, 504}
 
-    def _refill(self) -> None:
-        now = self._clock()
-        self._tokens = min(self.capacity, self._tokens + (now - self._last) * self.rate)
-        self._last = now
+class Response:
+    def __init__(self, status, body="", headers=None):
+        self.status, self.body, self.headers = status, body, headers or {}
 
-    def try_acquire(self, cost: float = 1.0) -> bool:
-        self._refill()
-        if self._tokens >= cost:
-            self._tokens -= cost
-            return True
-        return False
+def get_json(get, url, max_attempts=5, base=0.2, cap=5.0, sleep=None, rng=random.random):
+    for attempt in range(max_attempts):
+        try:
+            r = get(url)
+        except OSError:
+            r = None
+        if r is not None and 200 <= r.status < 300:
+            try:
+                return json.loads(r.body)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"malformed JSON from {url}") from e
+        if r is not None and r.status not in RETRYABLE:
+            raise RuntimeError(f"HTTP {r.status} from {url}")
+        if attempt == max_attempts - 1:
+            break
+        delay = rng() * min(cap, base * 2 ** attempt)
+        if r is not None and r.status == 429 and r.headers.get("Retry-After", "").isdigit():
+            delay = max(delay, float(r.headers["Retry-After"]))
+        sleep(delay)
+    raise TimeoutError(f"gave up on {url} after {max_attempts} attempts")
 
-    async def acquire(self, cost: float = 1.0) -> None:
-        if cost > self.capacity:
-            raise ValueError("cost exceeds bucket capacity")
-        async with self._lock:
-            while True:
-                self._refill()
-                if self._tokens >= cost:
-                    self._tokens -= cost
-                    return
-                await asyncio.sleep((cost - self._tokens) / self.rate)
+def hot_devices(devices, max_temp_c):
+    ok = [d for d in devices if isinstance(d.get("temp_c"), (int, float)) and isinstance(d.get("util"), (int, float))]
+    return sorted((d for d in ok if d["temp_c"] > max_temp_c), key=lambda d: (-d["util"], d["id"]))
+
+def scripted(responses):
+    it = iter(responses)
+    def get(url):
+        r = next(it)
+        if isinstance(r, Exception):
+            raise r
+        return r
+    return get
+
+slept = []
+body = json.dumps([{"id": "g0", "temp_c": 91, "util": 0.4}, {"id": "g2", "temp_c": 88, "util": 0.95},
+                   {"id": "g1", "temp_c": 70, "util": 0.9}, {"id": "g3", "util": 0.99}])
+get = scripted([Response(503), OSError("reset"), Response(429, headers={"Retry-After": "2"}), Response(200, body)])
+assert [d["id"] for d in hot_devices(get_json(get, "/devices", sleep=slept.append, rng=lambda: 0.5), 85)] == ["g2", "g0"]
+assert slept == [0.1, 0.2, 2.0]
 ```
 
-A test with `rate=10, capacity=5` and 15 sequential acquires finishes in about 1.0 second. That matches the expected time, because 5 tokens go out as the initial burst and the other 10 refill at 10 per second.
+Tests: the scripted sequence above (503, reset, 429 with Retry-After, then success), a 404 that raises at once, a 200 with a broken body, and three 500s that exhaust the attempts. Records missing a field are skipped, and the skip count should be logged in production.
 
-Complexity. Each call does O(1) work apart from sleeping. Refill is lazy and computed from elapsed time, so there's no background timer task.
+Alternatives: a fixed delay is simpler but synchronizes retries across clients; a library such as `tenacity` saves code, but in a live round writing the 20 lines shows you know the policy. For a real service I would also cap total time (for example 30 seconds) as well as attempts.
 
-Why it's built this way. `time.monotonic` doesn't jump when the wall clock changes. The lock makes waiters line up, so a stream of small requests can't starve one large request. `try_acquire` skips the lock because it never awaits, and on a single event loop nothing can interleave inside it. Cancellation is also safe. If a waiter is cancelled during `sleep`, `async with` releases the lock and no tokens are spent.
+Why this is likely: a recent first-hand Reddit report describes an NVIDIA practical coding round with this shape (REST call, JSON filtering and sorting, then retries, 429, backoff with jitter and separating I/O from logic).
 
-Edge cases. A cost larger than capacity would wait forever, so reject it. Use a float cost for token-based limits. Injecting the clock makes tests deterministic.
+#### Q2. Parse an agent run log into spans, then report tool latency and self time
 
-Likely follow-ups:
-- Per-tenant or per-model limits: keep a dict of buckets keyed by `(provider, model, api_key)` and evict idle ones.
-- Token limits where the true cost is only known after the call: reserve an estimate, then refund or charge the difference when usage comes back.
-- Server-side 429s: honor `Retry-After` by pausing the whole bucket, so every waiting call backs off together.
-- Several processes: move the state into Redis with a Lua script, or use GCRA, which stores one timestamp per key.
-- Threads: `asyncio.Lock` does not protect state across threads. Use one limiter per loop, or a `threading.Lock` and no awaits under it.
+You get a text log, one event per line, possibly out of order and with junk lines:
 
-Why this is likely: candidate reports from 2026 describe NVIDIA screens that ask about rate limiting and 429 handling when calling an API, and the listing asks for async programming and request lifecycles.
+```text
+t=0.000 span=s1 kind=agent name=planner ev=start
+t=0.100 span=s2 parent=s1 kind=llm name=chat ev=start
+t=0.900 span=s2 ev=end
+t=1.000 span=s3 parent=s1 kind=tool name=search ev=start
+t=1.250 span=s4 parent=s1 kind=tool name=search ev=start
+t=1.400 span=s3 ev=end
+t=1.950 span=s4 ev=end
+t=2.000 span=s5 parent=s1 kind=tool name=fetch ev=start
+garbage line
+t=2.300 span=s1 ev=end
+```
 
-#### Q2. Run N async tool calls with at most K in flight, a per-call timeout, and results returned in input order.
+Part 1: count and median latency per tool. Part 2: report spans that never ended and lines you could not parse. Part 3: self time per span (its duration minus the time covered by its children).
 
-Problem. Input: a list of zero-argument async callables, a concurrency limit `K >= 1`, and a timeout in seconds. Output: a list the same length as the input, where entry `i` holds either the value of call `i` or its exception. The other calls keep running when one fails. Cancelling the whole operation must cancel everything still running.
+Part 3 is the trap. `s3` and `s4` run at the same time, so subtracting each child's duration double counts the overlap and can give negative self time. The fix is to subtract the union of child intervals.
+
+```python
+from collections import defaultdict
+from statistics import median
+
+def parse(lines):
+    spans, bad = {}, 0
+    for line in lines:
+        try:
+            f = dict(tok.split("=", 1) for tok in line.split())
+            t, sid, ev = float(f["t"]), f["span"], f["ev"]
+        except (ValueError, KeyError):
+            bad += 1
+            continue
+        s = spans.setdefault(sid, {"start": None, "end": None, "parent": None, "kind": None, "name": None})
+        if ev == "start":
+            s.update(start=t, parent=f.get("parent") or None, kind=f.get("kind"), name=f.get("name"))
+        elif ev == "end":
+            s["end"] = t
+    return spans, bad
+
+def tool_latency(spans):
+    by = defaultdict(list)
+    for s in spans.values():
+        if s["kind"] == "tool" and s["start"] is not None and s["end"] is not None:
+            by[s["name"]].append(s["end"] - s["start"])
+    return {k: (len(v), round(median(v), 3)) for k, v in by.items()}
+
+def self_time(spans):
+    kids = defaultdict(list)
+    for s in spans.values():
+        if s["parent"] and s["start"] is not None and s["end"] is not None:
+            kids[s["parent"]].append((s["start"], s["end"]))
+    out = {}
+    for sid, s in spans.items():
+        if s["start"] is None or s["end"] is None:
+            continue
+        covered, cur_s, cur_e = 0.0, None, None
+        for a, b in sorted(kids[sid]):
+            if cur_e is None or a > cur_e:
+                covered += (cur_e - cur_s) if cur_e is not None else 0.0
+                cur_s, cur_e = a, b
+            else:
+                cur_e = max(cur_e, b)
+        covered += (cur_e - cur_s) if cur_e is not None else 0.0
+        out[sid] = round(s["end"] - s["start"] - covered, 3)
+    return out
+
+log = """t=0.000 span=s1 kind=agent name=planner ev=start
+t=0.100 span=s2 parent=s1 kind=llm name=chat ev=start
+t=0.900 span=s2 ev=end
+t=1.000 span=s3 parent=s1 kind=tool name=search ev=start
+t=1.250 span=s4 parent=s1 kind=tool name=search ev=start
+t=1.400 span=s3 ev=end
+t=1.950 span=s4 ev=end
+t=2.000 span=s5 parent=s1 kind=tool name=fetch ev=start
+garbage line
+t=2.300 span=s1 ev=end""".splitlines()
+spans, bad = parse(log)
+assert bad == 1 and tool_latency(spans) == {"search": (2, 0.55)}
+assert self_time(spans)["s1"] == 0.55
+assert [k for k, s in spans.items() if s["end"] is None] == ["s5"]
+```
+
+Parsing is keyed by span ID, so an `end` line that comes before its `start` still pairs up. Alternatives for the latency summary: keep all durations and take an exact median (what this does, fine up to millions of spans), or a streaming sketch such as t-digest when the log does not fit in memory. I would mention the sketch and keep the exact version for the round.
+
+Why this is likely: a senior software engineer report on LeetCode Discuss describes a multi-part Python parsing problem in NVIDIA's technical screen, and the listing centers on agent harnesses and tracing.
+
+#### Q3. Implement a string-keyed hash map in C++ without the standard containers (onsite data structures round, no AI)
+
+Write `put`, `get` and `erase` for string keys and 64-bit values with no `std::unordered_map`, `std::string` or `std::vector`. Then explain how deletes affect probing, and test it.
+
+I would choose open addressing with linear probing. It keeps all slots in one array, which is cache friendly, and it avoids a heap allocation per entry. Separate chaining is the alternative: deletes are simpler, but every insert allocates a node and lookups chase pointers, which typically costs 2x to 3x more time at the same load factor. Linear probing needs tombstones for deletes. If you empty a slot outright, a later key in the same probe run becomes unreachable. Tombstones also pile up, so the map counts them and rehashes once full plus deleted slots pass 75% of capacity. A rehash that is triggered mostly by tombstones keeps the same capacity.
+
+```cpp
+#include <cassert>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <cstdio>
+
+class StrMap {
+  struct Slot { char* key; int64_t val; uint8_t state; };   // 0 empty, 1 full, 2 deleted
+  Slot* slots_ = nullptr;
+  size_t cap_ = 0, size_ = 0, used_ = 0;                     // used_ counts full + deleted
+
+  static uint64_t hash(const char* s) {                       // FNV-1a
+    uint64_t h = 1469598103934665603ull;
+    while (*s) { h ^= (unsigned char)*s++; h *= 1099511628211ull; }
+    return h;
+  }
+  void rehash(size_t new_cap) {
+    Slot* old = slots_; size_t old_cap = cap_;
+    slots_ = (Slot*)calloc(new_cap, sizeof(Slot)); cap_ = new_cap; size_ = used_ = 0;
+    for (size_t i = 0; i < old_cap; i++)
+      if (old[i].state == 1) insert_owned(old[i].key, old[i].val);   // tombstones are dropped
+    free(old);
+  }
+  void insert_owned(char* key, int64_t val) {
+    size_t i = hash(key) & (cap_ - 1);
+    while (slots_[i].state == 1) i = (i + 1) & (cap_ - 1);
+    slots_[i] = {key, val, 1}; size_++; used_++;
+  }
+  long find(const char* key) const {
+    if (!cap_) return -1;
+    size_t i = hash(key) & (cap_ - 1);
+    for (size_t n = 0; n < cap_ && slots_[i].state != 0; n++, i = (i + 1) & (cap_ - 1))
+      if (slots_[i].state == 1 && strcmp(slots_[i].key, key) == 0) return (long)i;
+    return -1;
+  }
+ public:
+  StrMap() { rehash(8); }
+  ~StrMap() { for (size_t i = 0; i < cap_; i++) if (slots_[i].state == 1) free(slots_[i].key); free(slots_); }
+  StrMap(const StrMap&) = delete; StrMap& operator=(const StrMap&) = delete;
+  size_t size() const { return size_; }
+
+  void put(const char* key, int64_t val) {
+    long f = find(key);
+    if (f >= 0) { slots_[f].val = val; return; }
+    if ((used_ + 1) * 4 > cap_ * 3) rehash(size_ * 2 >= cap_ / 2 ? cap_ * 2 : cap_);  // grow, or just clear tombstones
+    size_t i = hash(key) & (cap_ - 1);
+    while (slots_[i].state == 1) i = (i + 1) & (cap_ - 1);    // reuse first empty or tombstone
+    if (slots_[i].state == 0) used_++;
+    slots_[i] = {strdup(key), val, 1}; size_++;
+  }
+  bool get(const char* key, int64_t* out) const {
+    long f = find(key);
+    if (f < 0) return false;
+    *out = slots_[f].val; return true;
+  }
+  bool erase(const char* key) {
+    long f = find(key);
+    if (f < 0) return false;
+    free(slots_[f].key); slots_[f].key = nullptr; slots_[f].state = 2; size_--;
+    return true;
+  }
+};
+
+int main() {
+  StrMap m; int64_t v;
+  m.put("search", 3); m.put("fetch", 5); m.put("search", 7);
+  assert(m.size() == 2 && m.get("search", &v) && v == 7);
+  assert(m.erase("fetch") && !m.get("fetch", &v) && !m.erase("fetch"));
+  char buf[32];
+  for (int i = 0; i < 20000; i++) { snprintf(buf, sizeof buf, "k%d", i); m.put(buf, i); }
+  for (int i = 0; i < 20000; i += 2) { snprintf(buf, sizeof buf, "k%d", i); assert(m.erase(buf)); }
+  for (int i = 0; i < 20000; i++) {
+    snprintf(buf, sizeof buf, "k%d", i);
+    assert(m.get(buf, &v) == (i % 2 == 1) && (i % 2 == 0 || v == i));
+  }
+  for (int i = 0; i < 100000; i++) { m.put("churn", i); m.erase("churn"); }   // tombstone churn
+  assert(m.size() == 10001);
+  puts("ok");
+}
+```
+
+I compiled it with `clang++ -std=c++17 -fsanitize=address,undefined` to catch leaks and out-of-bounds access. The tests cover overwrite, erase then lookup, 20,000 inserts with half erased (keys after a tombstone must still be found), and 100,000 put and erase cycles on one key. Without the tombstone-aware rehash, that last test fills the table with tombstones and turns every probe into a full scan. Capacity stays a power of two so the modulo is a mask. The map keeps its own copies of keys, and copying is deleted so two maps never free the same key.
+
+Why this is likely: a senior software engineer report on LeetCode Discuss describes C and C++ string problems without the STL, including building a hash map from scratch, and calibrd's NVIDIA guide notes C++ is common in systems rounds.
+
+#### Q4. These async tool calls sometimes return nothing, and the agent gets stuck. Find the bugs
+
+The agent harness runs a batch of model-requested tool calls with this function, and the test `test_tool_error_is_visible_to_model` fails. Production also hits the search provider's rate limit when the model asks for 40 searches at once.
 
 ```python
 import asyncio
-from dataclasses import dataclass
-from typing import Any, Optional
 
-@dataclass
-class Result:
-    index: int
-    value: Any = None
-    error: Optional[BaseException] = None
+async def run_tools(calls, registry, timeout=10):
+    results = {}
+    async def one(call):
+        try:
+            fn = registry[call["name"]]
+            results[call["id"]] = await asyncio.wait_for(fn(**call["args"]), timeout)
+        except Exception:
+            results[call["id"]] = None
+    await asyncio.gather(*[one(c) for c in calls])
+    return [results[c["id"]] for c in calls]
 
-async def run_bounded(calls, limit: int, timeout: float):
-    if limit < 1:
-        raise ValueError("limit must be >= 1")
-    sem = asyncio.Semaphore(limit)
-    out = [None] * len(calls)
+# FAILED test_tool_error_is_visible_to_model:
+#   expected {"ok": False, "error": "ValueError: index offline"}, got None
+```
 
-    async def one(i, fn):
+There are four bugs. First, every failure becomes `None`, so a crashed tool, an unknown tool and a timeout all look like "no results" to the model. The model then reasonably tries again, which is how loops start. Second, concurrency is unbounded, so 40 calls hit the provider at once. Third, results are keyed by call ID, and models do sometimes repeat an ID, so one result overwrites another and the list returns the same value twice. Fourth, a missing tool raises `KeyError` inside the same `try`, which hides a harness bug as a tool failure.
+
+```python
+import asyncio
+
+async def run_tools(calls, registry, max_in_flight=4, timeout=10.0):
+    sem = asyncio.Semaphore(max_in_flight)
+
+    async def one(call):
+        fn = registry.get(call["name"])
+        if fn is None:
+            return {"id": call["id"], "ok": False, "error": f"unknown tool {call['name']}"}
         async with sem:
             try:
-                out[i] = Result(i, value=await asyncio.wait_for(fn(), timeout))
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                out[i] = Result(i, error=e)
+                value = await asyncio.wait_for(fn(**call["args"]), timeout)
+                return {"id": call["id"], "ok": True, "value": value}
+            except asyncio.TimeoutError:
+                return {"id": call["id"], "ok": False, "error": f"timeout after {timeout}s"}
+            except Exception as e:                       # CancelledError is not caught
+                return {"id": call["id"], "ok": False, "error": f"{type(e).__name__}: {e}"}
 
-    async with asyncio.TaskGroup() as tg:
-        for i, fn in enumerate(calls):
-            tg.create_task(one(i, fn))
-    return out
+    return await asyncio.gather(*(one(c) for c in calls))
+
+async def search(q):
+    await asyncio.sleep(0.01)
+    if q == "boom":
+        raise ValueError("index offline")
+    return [] if q == "nothing" else [q.upper()]
+
+calls = [{"id": "c1", "name": "search", "args": {"q": "a"}},
+         {"id": "c1", "name": "search", "args": {"q": "nothing"}},
+         {"id": "c3", "name": "search", "args": {"q": "boom"}},
+         {"id": "c4", "name": "nope", "args": {}}]
+out = asyncio.run(run_tools(calls, {"search": search}))
+assert out[1] == {"id": "c1", "ok": True, "value": []}
+assert out[2] == {"id": "c3", "ok": False, "error": "ValueError: index offline"}
+assert out[3]["error"] == "unknown tool nope"
 ```
 
-I tested it with five calls, K=2 and a 0.4 second timeout. Peak concurrency stayed at 2, a 0.5 second call came back as `TimeoutError`, a failing call came back as `RuntimeError`, and every other call kept its result in its own slot.
+`gather` returns results in input order, so the dictionary goes away. Cancellation still propagates: `CancelledError` is a `BaseException` in Python 3.8 and later, so it is not caught, and cancelling the agent cancels its tools. For bounding concurrency, a semaphore per batch is the simple choice; a shared per-provider limiter (a token bucket keyed by tool) is better when several agents share one rate limit. I'd use the semaphore here and say that the provider limit belongs in the tool client.
 
-Complexity. O(N) tasks and O(N) memory. Wall time is about the sum of durations divided by K, bounded below by the slowest call.
+Why this is likely: candidate reports and NVIDIA prep guides describe practical debugging and concurrency coding in onsite rounds, and the listing asks for async programming in agent harnesses and tool calls.
 
-Details interviewers look for:
-- Errors are caught inside `one`, so the `TaskGroup` never sees them and doesn't cancel the siblings. `CancelledError` is re-raised on purpose. Swallowing it breaks structured concurrency, because the parent never learns that cancellation finished.
-- The timeout starts after the semaphore is acquired, so queueing time doesn't count against it. Say this out loud and ask which behavior the interviewer wants.
-- On Python 3.11 and later, `asyncio.TimeoutError` is the built-in `TimeoutError`.
+#### Q5. A teammate's coding assistant wrote this tracing middleware. Review it before it ships in the library
 
-Edge cases. Empty input returns `[]`. K larger than N is fine. A callable that raises before its first await is still caught, because `fn()` runs inside `wait_for`. A coroutine that suppresses cancellation can hang the group. Mention it and leave it out of scope.
-
-Likely follow-ups:
-- 100,000 calls: creating every task up front costs memory, so switch to K worker tasks pulling from an `asyncio.Queue`.
-- A whole-batch deadline: wrap the group in `async with asyncio.timeout(total)`.
-- Fail-fast mode: let the exception escape so the `TaskGroup` cancels the rest.
-- Streaming results as they finish: use `asyncio.as_completed` and keep the index.
-- The Rust version uses `tokio::sync::Semaphore`, `tokio::time::timeout`, and a `JoinSet`, writing results into a pre-sized `Vec` by index.
-
-Why this is likely: the listing names async programming and callbacks as core requirements, parallel tool execution is a standard agent harness feature, and NVIDIA candidate reports in 2026 mention concurrency questions in coding rounds.
-
-#### Q3. Build an LRU cache with TTL, then make concurrent misses for the same key share one backend call.
-
-Problem. Part 1: `get(key)` and `put(key, value)` in O(1), evicting the least recently used entry above `capacity`, with entries expiring `ttl` seconds after they are written. Part 2: an async `get_or_call(key, fn)` where 20 concurrent misses on the same key run `fn` once and every caller gets the result. In an agent harness, this is how you cache embedding or tool results when many sub-agents ask for the same thing.
+You review the pull request by hand, with no AI, as at NVIDIA. The middleware wraps every tool call, buffers events, and an exporter drains the buffer every second.
 
 ```python
-import asyncio, time
-from collections import OrderedDict
+import asyncio, json, time
 
-class TTLCache:
-    def __init__(self, capacity: int, ttl: float, clock=time.monotonic):
-        self.capacity, self.ttl, self.clock = capacity, ttl, clock
-        self._d = OrderedDict()   # key -> (expires_at, value)
+class ToolTracer:
+    def __init__(self, max_buffer=1000):
+        self.buf = [None] * max_buffer
+        self.n = 0
 
-    def get(self, key, default=None):
-        item = self._d.get(key)
-        if item is None:
-            return default
-        expires, value = item
-        if expires <= self.clock():
-            del self._d[key]
-            return default
-        self._d.move_to_end(key)
-        return value
+    def record(self, event):
+        self.buf[self.n % len(self.buf)] = event
+        self.n += 1
 
-    def put(self, key, value) -> None:
-        if self.capacity <= 0:
-            return
-        self._d[key] = (self.clock() + self.ttl, value)
-        self._d.move_to_end(key)
-        while len(self._d) > self.capacity:
-            self._d.popitem(last=False)
+    def drain(self):
+        if self.n >= len(self.buf):
+            start = (self.n + 1) % len(self.buf)
+            out = self.buf[start:] + self.buf[:start]
+        else:
+            out = self.buf[:self.n]
+        self.n = 0
+        return out
 
-_MISS = object()
-
-class SingleFlight:
-    def __init__(self, cache: TTLCache):
-        self.cache = cache
-        self._inflight = {}
-
-    async def get_or_call(self, key, fn):
-        hit = self.cache.get(key, _MISS)
-        if hit is not _MISS:
-            return hit
-        fut = self._inflight.get(key)
-        if fut is None:
-            fut = asyncio.get_running_loop().create_future()
-            self._inflight[key] = fut
-            try:
-                val = await fn()
-                self.cache.put(key, val)
-                fut.set_result(val)
-            except asyncio.CancelledError:
-                fut.cancel()
-                raise
-            except Exception as e:
-                fut.set_exception(e)
-                fut.exception()   # mark retrieved to avoid "never retrieved" warnings
-                raise
-            finally:
-                del self._inflight[key]
-            return val
-        return await asyncio.shield(fut)
+    async def wrap(self, name, fn, **kwargs):
+        start = time.time()
+        async with asyncio.timeout_after(30):
+            result = await fn(**kwargs)
+        self.record({"tool": name, "args": json.dumps(kwargs), "ms": (time.time() - start) * 1000})
+        return result
 ```
 
-Tests covered LRU order, expiry with a fake clock, 20 concurrent callers producing exactly one backend call, errors reaching every waiter, and a cancelled waiter leaving the shared call alone.
+Findings, worst first:
 
-Complexity. Every operation is O(1). `OrderedDict` is a hash map plus a doubly linked list, the same structure you'd build by hand, and you should be ready to build it by hand. NVIDIA reports include "LRU cache" and "hashmap without STL".
+1. Hallucinated API. `asyncio.timeout_after` does not exist. Python 3.11 has `asyncio.timeout`, and `asyncio.wait_for` works on every supported version. As written, every wrapped call raises `AttributeError`.
+2. Security. Raw `kwargs` go into telemetry, and tool arguments often carry API keys or `Authorization` headers. Those would land in whatever backend the exporter writes to. Redact known secret keys recursively before serializing.
+3. Missing edge case. The event is recorded only on success, so failed, timed-out and cancelled calls vanish from traces, which are exactly the calls people debug. Record in `finally` with a status.
+4. Off-by-one. After the buffer wraps, the oldest event sits at `n % len`, not `(n + 1) % len`, so `drain` returns events out of order.
+5. Smaller issues: `time.time()` can jump with clock changes, so use `time.perf_counter()`. Dropped events are not counted, so nobody knows the buffer overflowed.
 
-Edge cases. Expiry is lazy, so expired entries keep using memory until someone reads them or they get evicted. Add a periodic sweep or a min-heap of expiry times if that matters. `_MISS` is a sentinel so that cached `None` values still count as hits. `shield` means a waiter that gets cancelled stops waiting without cancelling the shared future.
-
-Likely follow-ups:
-- If the leader is cancelled, every waiter fails. Fix it by running `fn` in its own task that the leader also awaits through `shield`.
-- Negative caching for errors, with a short TTL.
-- Thread safety: one lock per cache, with the backend call made outside the lock.
-- Writing the linked list by hand: sentinel head and tail nodes, plus `_remove` and `_add_front` helpers.
-
-Why this is likely: LRU cache shows up repeatedly in NVIDIA candidate reports and company-tagged problem lists (Interview Query, fastprep, Crackr), and the async extension ties it to the agent harness work in the listing.
-
-### Data structures and performance coding
-
-#### Q4. Rebuild span trees from an unordered event stream and compute self time and the critical path of an agent run.
-
-Problem. Input: lifecycle events `{"kind": "start"|"end", "id", "parent", "name", "ts"}` in any order, the way they arrive from several threads or exporters. Output: (a) the root spans, with spans that never closed reported separately, (b) self time per span, meaning time not covered by any child, where children can overlap because tools run in parallel, (c) the critical path: the chain of spans that decided the run's wall time.
+Verdict: request changes. Fixed version:
 
 ```python
-from dataclasses import dataclass, field
-from typing import Optional
-
-@dataclass
-class Span:
-    id: str
-    parent: Optional[str] = None
-    name: str = ""
-    start: Optional[float] = None
-    end: Optional[float] = None
-    children: list = field(default_factory=list)
-
-def build_tree(events):
-    spans = {}
-    for e in events:                       # events may arrive in any order
-        s = spans.setdefault(e["id"], Span(e["id"]))
-        if e["kind"] == "start":
-            s.parent, s.name, s.start = e.get("parent"), e["name"], e["ts"]
-        else:
-            s.end = e["ts"]
-    roots, incomplete = [], []
-    for s in spans.values():
-        if s.start is None or s.end is None:
-            incomplete.append(s.id)
-            continue
-        p = spans.get(s.parent) if s.parent else None
-        if p is None or p.start is None or p.end is None:
-            roots.append(s)                # orphan: parent missing or still open
-        else:
-            p.children.append(s)
-    return roots, incomplete
-
-def self_time(span):
-    covered, cur_s, cur_e = 0.0, None, None
-    for a, b in sorted((c.start, c.end) for c in span.children):
-        if cur_e is None or a > cur_e:
-            if cur_e is not None:
-                covered += cur_e - cur_s
-            cur_s, cur_e = a, b
-        else:
-            cur_e = max(cur_e, b)
-    if cur_e is not None:
-        covered += cur_e - cur_s
-    return (span.end - span.start) - covered
-
-def critical_path(span):
-    path, stack = [], [span]
-    while stack:
-        s = stack.pop()
-        path.append(s.name)
-        cursor, chosen = s.end, []
-        for c in sorted(s.children, key=lambda c: c.end, reverse=True):
-            if c.end <= cursor:
-                chosen.append(c)
-                cursor = c.start
-        stack.extend(chosen)   # latest-first, so pop() expands in time order
-    return path
-```
-
-Test run: an agent spends 0 to 3 s on `llm1`, runs `toolA` (3 to 5 s) and `toolB` (3 to 9 s) in parallel, then `llm2` (9 to 10 s), and ends at 10.5 s. The critical path is `agent -> llm1 -> toolB -> llm2`, the root's self time is 0.5 s, and an unclosed span is reported as incomplete.
-
-How it works. Self time is interval-union length, the "merge intervals" pattern. The critical path walks backward from the parent's end. At each step it takes the child that finished last before the cursor, then moves the cursor to that child's start. This is the same idea as the nested-stack bottleneck analysis in NVIDIA's NeMo Agent Toolkit profiler.
-
-Complexity. Building the tree is O(E). Self time and the critical path are O(c log c) per span for sorting, so O(S log S) overall. The traversal is iterative, so a deep tree of nested sub-agents can't hit Python's recursion limit.
-
-Edge cases. An end that arrives before its start. A span whose parent was dropped by a full exporter queue: promote it to a root so it stays in the output. Clock skew between processes: prefer monotonic timestamps from a single clock, or record a per-process offset. Duplicate events from at-least-once delivery: dedupe on `(id, kind)`.
-
-Likely follow-ups:
-- Streaming version with bounded memory: keep only open spans and finalize subtrees when their root closes.
-- Detecting idle gaps inside the critical path, where the harness was waiting on itself.
-- Attributing tokens and cost along the path.
-
-Why this is likely: the listing asks for benchmarking agents to find bottlenecks, NVIDIA's NeMo Agent Toolkit ships exactly this kind of nested-stack analysis, and candidate reports describe practical parsing problems in screens.
-
-#### Q5. This Python event emitter costs 7 microseconds per event on the hot path. Make it fast without changing what subscribers see.
-
-Problem. Every LLM and tool callback in a harness calls `emit`. Profiling shows the instrumentation adding measurable end-to-end latency. Requirements: lower the per-call cost, keep emission order, keep I/O off the caller's path, and bound memory.
-
-```python
-import json, threading, time, uuid
+import asyncio, json, time
 from collections import deque
 
-class NaiveEmitter:
-    def __init__(self, sink):
-        self.lock = threading.Lock()
-        self.subscribers = []
-        self.sink = sink
+SECRET_KEYS = {"api_key", "authorization", "token", "password", "secret"}
 
-    def subscribe(self, fn):
-        self.subscribers.append(fn)
+def redact(obj):
+    if isinstance(obj, dict):
+        return {k: "[redacted]" if k.lower() in SECRET_KEYS else redact(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [redact(v) for v in obj]
+    return obj
 
-    def emit(self, kind, name, payload):
-        event = {"id": str(uuid.uuid4()), "ts": time.time(),
-                 "kind": kind, "name": name, "payload": payload}
-        line = json.dumps(event)              # serialize on the hot path
-        with self.lock:                       # lock held during I/O
-            self.sink.write(line + "\n")
-            for fn in self.subscribers:
-                fn(json.loads(line))          # every subscriber re-parses
-
-class Event:
-    __slots__ = ("seq", "ts_ns", "kind", "name", "payload")
-    def __init__(self, seq, ts_ns, kind, name, payload):
-        self.seq, self.ts_ns, self.kind, self.name, self.payload = seq, ts_ns, kind, name, payload
-
-class FastEmitter:
-    def __init__(self, sink, max_queue=65536, batch=512):
-        self._q = deque()
-        self._max = max_queue
-        self._batch = batch
-        self._seq = 0
-        self._subs = ()                       # immutable tuple: copy-on-write
-        self._sink = sink
+class ToolTracer:
+    def __init__(self, max_buffer=1000):
+        self.buf = deque(maxlen=max_buffer)
         self.dropped = 0
-        self._ns = time.perf_counter_ns       # bind hot lookups once
 
-    def subscribe(self, fn):
-        self._subs = self._subs + (fn,)
-
-    def emit(self, kind, name, payload):
-        q = self._q
-        if len(q) >= self._max:               # bounded: drop, never block the caller
+    def record(self, event):
+        if len(self.buf) == self.buf.maxlen:
             self.dropped += 1
-            return
-        self._seq += 1
-        q.append(Event(self._seq, self._ns(), kind, name, payload))
-        if len(q) >= self._batch:
-            self.flush()
+        self.buf.append(event)
 
-    def flush(self):
-        q, subs, dumps = self._q, self._subs, json.dumps
-        out = []
-        for _ in range(len(q)):
-            e = q.popleft()
-            for fn in subs:
-                fn(e)                         # subscribers get the object, no re-parse
-            out.append(dumps((e.seq, e.ts_ns, e.kind, e.name, e.payload)))
-        if out:
-            self._sink.write("\n".join(out) + "\n")   # one write per batch
+    def drain(self):
+        out, self.buf = list(self.buf), deque(maxlen=self.buf.maxlen)
+        return out
+
+    async def wrap(self, name, fn, timeout=30.0, **kwargs):
+        start, status = time.perf_counter(), "ok"
+        try:
+            return await asyncio.wait_for(fn(**kwargs), timeout)
+        except BaseException as e:
+            status = type(e).__name__
+            raise
+        finally:
+            self.record({"tool": name, "args": json.dumps(redact(kwargs), default=str),
+                         "status": status, "ms": round((time.perf_counter() - start) * 1000, 3)})
+
+async def echo(q, api_key=None, headers=None):
+    return q
+
+async def main():
+    t = ToolTracer(max_buffer=3)
+    await t.wrap("echo", echo, q="hi", api_key="sk-123", headers={"Authorization": "Bearer x"})
+    assert "sk-123" not in t.drain()[0]["args"]
+    for i in range(5):
+        await t.wrap("echo", echo, q=str(i))
+    assert [json.loads(e["args"])["q"] for e in t.drain()] == ["2", "3", "4"] and t.dropped == 2
+
+asyncio.run(main())
 ```
 
-Measured on CPython 3.14 with a null sink, two subscribers and 200,000 events: 7.16 microseconds per event naive, 1.65 microseconds optimized, about 4.3 times faster. Most of the gain comes from serializing once per batch where the naive version serialized and then re-parsed JSON for every subscriber, from using a sequence number in place of UUID4, and from making one sink write per batch.
+Using `deque(maxlen=...)` removes the hand-written index math entirely, which is the safer choice here; a preallocated array is only worth it if profiling shows the deque on the hot path. Tests that would have caught each bug: an import-time smoke test, a secret-in-args test, a failing tool, and a wraparound order test.
 
-What changed and why:
-- `uuid4` reads OS randomness, and a per-process counter is enough for ordering and dedupe.
-- `__slots__` objects allocate less than dicts.
-- Subscribers get the object instead of a re-parsed copy, so the contract becomes "events are immutable". Write that down, because a subscriber that mutates an event now affects the others.
-- Snapshotting the subscriber tuple removes the lock from the read path.
-- `perf_counter_ns` is monotonic. Keep one wall-clock anchor per batch if exporters need epoch time.
+Why this is likely: the role builds open-source agent observability libraries, so reviewing tracing code is part of the job; NVIDIA bans outside AI in interviews, so the review is done by hand (inferred format, medium confidence).
 
-Complexity. O(1) amortized per emit. Memory is bounded by `max_queue`.
+#### Q6. Build an in-process event bus where a slow telemetry exporter can never stall the agent
 
-Likely follow-ups:
-- Flush still runs on the caller's thread when a batch fills. Move it to a background thread or an asyncio task, and cap the time per flush.
-- Thread safety: `deque.append` and `popleft` are atomic under the GIL, but `self._seq += 1` is not. On free-threaded 3.14, use `itertools.count()` or a lock.
-- Wrap each subscriber call in try/except so one bad subscriber can't break the rest or the flush.
-- Report `dropped` as a metric.
-- The next step is moving the queue and serialization into Rust behind PyO3 (see Q7). The emit path then becomes one boundary crossing that only stores Python references.
+Requirements: many subscribers. An audit subscriber must see every event in order. A telemetry subscriber may lose events, but the producer (the agent loop) must never wait on it. A subscriber that throws must not stop the others.
 
-Why this is likely: the listing asks for profiling and optimizing library overhead "across ... serialization, tracing, or middleware pipelines" and for instrumenting frameworks "without changing user-visible behavior".
-
-### Runtime internals
-
-#### Q6. Your tracing wrapper around a streaming LLM call parents spans under the wrong agent when sub-agents run concurrently. Explain why and fix it.
-
-OpenTelemetry Python stores the current span in a `contextvars.ContextVar`. Each asyncio task runs inside a copy of the context taken when the task was created. `tracer.start_as_current_span` sets the variable on entry and resets it with a token on exit. A coroutine is fine, because the set and the reset happen in the same task. An async generator breaks this. If you set the span and then `yield` while it is still set, control returns to the consumer with your span still current. Any span the consumer starts between chunks gets parented under the stream instead of under its own agent.
-
-I reproduced it in a small test. A leaky wrapper sets the variable, then does `async for c in agen: yield c`. The consumer sees `'llm.stream'` as the current value on every chunk, when it should see its own context. When the generator is resumed from a different task (common under a `TaskGroup`, or when a framework hands the stream to another task), `reset(token)` raises `ValueError: Token ... was created in a different Context`. A Google ADK issue from 2026 documents this exact bug with OpenTelemetry. A first fix using `context.attach`/`detach` around yields was reverted two days later, because `detach` raised during cancellation.
-
-The fix that holds up is to make each step of the generator self-contained. Set the context around each `__anext__` call and reset it before yielding:
+The design choice is the backpressure policy per subscriber. There are three options. Blocking (the producer waits for queue space) gives lossless delivery but lets the slowest consumer set the agent's speed. Dropping the oldest event keeps the newest data and never blocks. Dropping the newest keeps a contiguous prefix, which is useful for replays. One global policy is wrong for this mix, so each subscriber gets its own bounded queue and policy, and its own task drains it.
 
 ```python
-from opentelemetry import context, trace
+import asyncio
 
-async def traced_stream(agen, span):
-    it = agen.__aiter__()
-    try:
-        while True:
-            token = context.attach(trace.set_span_in_context(span))
-            try:
-                chunk = await it.__anext__()
-            except StopAsyncIteration:
-                break
-            finally:
-                context.detach(token)
-            yield chunk
-    finally:
-        span.end()
+class EventBus:
+    def __init__(self):
+        self.subs = []
+
+    def subscribe(self, handler, maxsize=1024, policy="drop_oldest"):
+        q = asyncio.Queue(maxsize)
+        sub = {"q": q, "policy": policy, "dropped": 0, "errors": 0}
+        async def pump():
+            while True:
+                ev = await q.get()
+                try:
+                    await handler(ev)
+                except Exception:
+                    sub["errors"] += 1
+                finally:
+                    q.task_done()
+        sub["task"] = asyncio.get_running_loop().create_task(pump())
+        self.subs.append(sub)
+        return sub
+
+    async def emit(self, ev):
+        for s in self.subs:
+            if s["policy"] == "block":
+                await s["q"].put(ev)
+            else:
+                if s["q"].full():
+                    s["q"].get_nowait(); s["q"].task_done(); s["dropped"] += 1
+                s["q"].put_nowait(ev)
+
+    async def close(self):
+        for s in self.subs:
+            await s["q"].join()
+            s["task"].cancel()
+        await asyncio.gather(*(s["task"] for s in self.subs), return_exceptions=True)
+
+async def main():
+    bus, audit, tele = EventBus(), [], []
+    async def audit_h(ev): audit.append(ev)
+    async def slow_tele(ev): await asyncio.sleep(0.01); tele.append(ev)
+    async def bad(ev): raise ValueError
+    bus.subscribe(audit_h, maxsize=2, policy="block")
+    t = bus.subscribe(slow_tele, maxsize=4)
+    b = bus.subscribe(bad, maxsize=4)
+    loop = asyncio.get_running_loop(); t0 = loop.time()
+    for i in range(200):
+        await bus.emit(i)
+    assert loop.time() - t0 < 0.5
+    await bus.close()
+    assert audit == list(range(200)) and tele[-1] == 199 and t["dropped"] > 150 and b["errors"] > 0
+
+asyncio.run(main())
 ```
 
-The span object outlives the yields, but it is only "current" while upstream code runs. With this version the consumer sees its own context. Related points an expert would bring up:
+The test runs 200 events through a telemetry handler that takes 10 ms each, so a blocking design would take 2 seconds. With drop-oldest the emit loop finishes in a few milliseconds, the exporter keeps the newest events, and `dropped` reports the loss so it shows up in metrics. In a Rust core the same shape is a bounded `tokio::sync::mpsc` per subscriber with `try_send` for lossy subscribers and `send().await` for lossless ones. `broadcast` is the alternative, but it makes every receiver lag together and reports lag only to the receiver.
 
-- Start a span and make it current in separate steps (`start_span` versus `start_as_current_span`) when the lifetime doesn't match a lexical block.
-- End the span in `finally`, and handle the consumer abandoning the stream: `aclose()` raises `GeneratorExit` inside the generator.
-- Threads don't inherit contextvars. `run_in_executor` needs `contextvars.copy_context().run`, and `asyncio.to_thread` already does this.
-- Callback-style frameworks such as LangChain handlers get start and end callbacks, often on different tasks. Keep an explicit `run_id -> span` map and parent spans by id, without relying on the ambient context.
-- In Rust `tracing`, the same bug is holding a `Span::enter()` guard across `.await`. Use `future.instrument(span)` instead.
+Why this is likely: the listing asks for event-driven systems, and Blind replies on NVIDIA senior loops say interviewers push on latency against throughput and failure handling (medium confidence).
 
-Why this is likely: the listing asks for instrumenting third-party frameworks "without changing user-visible behavior" and for OpenTelemetry and tracing experience, and this failure mode is publicly documented in a major agent framework.
+#### Q7. This support agent loops between two tools in 18% of sessions. Read the trace, find the cause and add a detector
 
-#### Q7. Where does time go when Python calls into a Rust core through PyO3, and how do you make a hot path cheap?
+Three traces look like this one (trimmed):
 
-The costs, from biggest to smallest in the cases I've seen:
-
-1. Conversion at the boundary. `Vec<String>` or `HashMap` arguments copy every element out of Python objects. A `dict` payload converted into a Rust struct on every event can cost more than the work itself. Fixes: accept `&Bound<'_, PyAny>` and convert lazily, keep payloads as `Py<PyAny>` until an exporter needs them, or take `bytes` or buffer-protocol objects for bulk data.
-2. Error construction. The PyO3 performance guide notes that chained `extract` calls build a `PyErr` for every failed attempt. When you only need a type test, `cast` skips converting `PyDowncastError` into a `PyErr`.
-3. String allocation. Each `&str` to Python conversion allocates a new `PyString`. The `intern!` macro caches attribute names and dict keys at each call site.
-4. Calling back into Python. PyO3 uses the faster `vectorcall` protocol when arguments are a Rust tuple and falls back to `tp_call` for `Bound<PyTuple>`. Subscribers written in Python and invoked from Rust pay this on every event.
-5. Interpreter attachment. With the GIL, only one attached thread runs Python at a time. Wrap long Rust-only work in `Python::detach` (named `allow_threads` in older PyO3) so other Python threads keep running. On the free-threaded build, which CPython 3.14 officially supports, detaching still matters because stop-the-world events such as GC wait for every attached thread.
-6. Reference counting. Dropping a `Py<T>` while detached pushes the decref into a global reference pool, which is synchronized and drained on the next attach. The guide lists the `pyo3_disable_reference_pool` flag to remove that cost, with the risk of an abort if you drop while detached.
-
-Design rules that follow:
-- Cross the boundary once per batch or per lifecycle event, passing all fields in that one call.
-- Keep state in Rust behind `#[pyclass]` handles.
-- Do serialization and export on Rust threads, with Tokio living in the extension. Bridge to asyncio with something like `pyo3-async-runtimes` so Python gets an awaitable without blocking the event loop.
-
-On the free-threaded build, `#[pyclass]` types must be `Sync` or marked `unsendable`. Shared mutable state needs real locks, because the GIL no longer serializes access.
-
-How to measure: `criterion` for the pure Rust function, `pyperf` or `pytest-benchmark` for the Python call, and `perf` or `py-spy --native` to see whether time sits in conversion, in `PyO3` glue, or in your code. Report nanoseconds per call for an empty function, for a typical payload, and for a batch of 512. Those three numbers tell you whether batching is worth its added latency and its shutdown-flush complexity.
-
-Why this is likely: the listing explicitly names PyO3, maturin and Python/Rust bindings, and "profiling or optimizing runtime and library overhead across language boundaries".
-
-#### Q8. In a Tokio-based event pipeline, how do you apply backpressure, and what breaks with cancellation and blocking?
-
-Backpressure means slow consumers push back on producers before memory grows without limit. In Tokio:
-
-- `mpsc::channel(n)` is bounded. `send().await` parks the producer when the buffer is full. Inside it's a semaphore of permits, and Tokio's async semaphore keeps waiters in an intrusive linked list, so waiting doesn't allocate.
-- `try_send` returns `Full` right away, so the caller can drop, sample or count.
-- `unbounded_channel` has no backpressure at all. Use it only when the producer is already bounded by something else.
-- `Semaphore` limits concurrent work, such as in-flight LLM calls per provider, without a queue between stages.
-
-The design question is which side pays when the queue fills. The agent's speed comes first, so telemetry takes the loss. OpenTelemetry's spec says `Span.End()` must not do blocking I/O, and BatchSpanProcessor drops spans when the queue is full by default. A 2026 spec issue proposing an opt-in "block on overflow" mode drew pushback for exactly this reason: blocking inside a single-threaded event loop (asyncio or Node) stalls the application. So the emit path uses `try_send` and counts drops:
-
-```rust
-use std::sync::atomic::{AtomicU64, Ordering};
-use tokio::sync::mpsc::{self, error::TrySendError};
-
-// Event and export_batch are defined elsewhere in the crate.
-static DROPPED: AtomicU64 = AtomicU64::new(0);
-
-fn emit(tx: &mpsc::Sender<Event>, ev: Event) {
-    match tx.try_send(ev) {
-        Ok(()) => {}
-        Err(TrySendError::Full(_)) => { DROPPED.fetch_add(1, Ordering::Relaxed); }
-        Err(TrySendError::Closed(_)) => {}
-    }
-}
-
-async fn exporter(mut rx: mpsc::Receiver<Event>) {
-    let mut buf = Vec::with_capacity(512);
-    while rx.recv_many(&mut buf, 512).await > 0 {
-        export_batch(&buf).await;
-        buf.clear();
-    }
-}
+```text
+{"type":"tool_call","tool":"search_kb","args":{"q":"refund status"}}
+{"type":"tool_result","tool":"search_kb","result":{"docs":["refund-policy"]}}
+{"type":"tool_call","tool":"get_ticket","args":{"id":881}}
+{"type":"tool_result","tool":"get_ticket","result":{}}
+{"type":"llm","text":"I could not find the ticket details. Let me search again."}
+{"type":"tool_call","tool":"search_kb","args":{"q":"refund status"}}
+{"type":"tool_result","tool":"search_kb","result":{"docs":["refund-policy"]}}
+{"type":"tool_call","tool":"get_ticket","args":{"id":881}}
+{"type":"tool_result","tool":"get_ticket","result":{}}
+{"type":"tool_call","tool":"search_kb","args":{"q":"refund status"}}
+{"type":"tool_result","tool":"search_kb","result":{"docs":["refund-policy"]}}
+{"type":"tool_call","tool":"get_ticket","args":{"id":881}}
+{"type":"tool_result","tool":"get_ticket","result":{}}
+{"type":"end","reason":"max_steps"}
 ```
 
-Work that must not be lost, like a guardrail decision or a tool result, gets `send().await` so the caller waits.
+`get_ticket` returns `{}` every time. In the ticket service logs for the same request IDs, the calls returned 403, because the agent's service token lacks the scope for that ticket queue. The tool wrapper turns any non-200 response into an empty result (the same pattern as Q4), so the model reads it as "no data yet" and retries the same plan. The same identical arguments repeat three times, so nothing new is being tried.
 
-Cancellation. Dropping a future cancels it at its last `.await`. Inside `tokio::select!`, a branch that loses gets dropped, so every branch must be cancel safe. `mpsc::Receiver::recv` is cancel safe. Reading into a partial buffer across an await, or popping an item into a local variable before an await, is not, and the data is lost. Async Rust has no async `Drop`, so cleanup that needs I/O (flushing an exporter) needs an explicit `shutdown().await` with a deadline, and a `Drop` that only signals.
+Fixes: return a structured error (`{"ok": false, "error": "403 forbidden: missing scope tickets.refunds"}`) so the model can tell the user or escalate; fix the token scope; and add a runtime guard that stops a repeated cycle of identical calls and hands off. Here is the detector:
 
-Blocking. A synchronous call inside a task stalls that worker thread and every task queued on it. Examples: a big `serde_json` serialization, file I/O, or calling into Python. Use `spawn_blocking` or a dedicated thread. Under PyO3, release Python attachment before any `.await`.
+```python
+import json
 
-Tracing. `Span::enter()` across an await misattributes events. Use `.instrument(span)`.
+def find_loop(events, min_repeats=3):
+    calls = [(e["tool"], json.dumps(e["args"], sort_keys=True)) for e in events if e["type"] == "tool_call"]
+    for period in (1, 2, 3):
+        for start in range(len(calls) - period * min_repeats + 1):
+            cycle = calls[start:start + period]
+            if all(calls[start + k * period:start + (k + 1) * period] == cycle for k in range(min_repeats)):
+                return {"start": start, "cycle": [c[0] for c in cycle]}
+    return None
 
-Why this is likely: the listing names async Rust, Tokio and runtime state management, and the task mix calls for backpressure. The OpenTelemetry drop-versus-block debate is current and shows the tradeoff directly.
+tr = [{"type": "tool_call", "tool": "search_kb", "args": {"q": "refund status"}},
+      {"type": "tool_result", "tool": "search_kb", "result": {"docs": ["refund-policy"]}},
+      {"type": "tool_call", "tool": "get_ticket", "args": {"id": 881}},
+      {"type": "tool_result", "tool": "get_ticket", "result": {}}] * 3
+assert find_loop(tr) == {"start": 0, "cycle": ["search_kb", "get_ticket"]}
+assert find_loop(tr[:8]) is None
+assert find_loop([{"type": "tool_call", "tool": "search_kb", "args": {"q": f"q{i}"}} for i in range(6)]) is None
+```
 
-#### Q9. You maintain one runtime with Rust, Python, Node.js and Go bindings. How do you keep the API consistent and backward compatible?
+Two rounds are allowed, because one retry after a transient error is normal. The detector compares arguments too, so a search with new queries counts as progress. The alternative guard is a flat step cap, which already exists here (`max_steps`) and only fires after the session has wasted its budget. The cycle check fires after about 6 calls instead of 30. To prove the fix, rerun the failing sessions plus a regression set and check that the loop rate falls toward zero while the resolution rate holds.
 
-Start from one source of truth for behavior. NVIDIA's open-source NeMo Relay, which matches this listing closely, states that Rust is the source of truth for runtime behavior, Python and Node.js are the primary bindings, and Go and the raw C FFI are experimental. It also asks contributors to check parity with the other bindings whenever they add behavior to one. Adopt the same policy.
-
-Layering:
-- A Rust core crate with the real semantics: scopes, events, middleware ordering, error types.
-- A stable C ABI made of opaque handles, `extern "C"` functions, explicit ownership (`*_new` and `*_free`), integer error codes plus a "last error" accessor, and only C-compatible types crossing the boundary. Go uses this through cgo.
-- Native bindings for Python (PyO3) and Node (napi-rs) that call the core directly and skip the C layer, which avoids double conversion.
-- Payloads crossing the boundary are JSON-compatible values or a versioned schema. Relay's events carry an `atof_version` field for this reason.
-
-Where the languages differ:
-- Async. Rust futures need a runtime. Python wants awaitables on its own loop. Node wants Promises, and callbacks from Rust worker threads must go through a `ThreadsafeFunction` back to the JS main thread. Go wants blocking calls in goroutines. Define the async contract once (what runs where, what can block, what happens on cancel) and map it into each binding.
-- Callbacks into the host language. Each call costs a boundary crossing plus lock acquisition (GIL, the JS event loop, Go's cgo callback). Batch, or let hosts poll.
-- Errors. Map a closed set of core error kinds to idiomatic types: Python exception subclasses, JS `Error` with a `code`, Go `error` values. Wrap every exported function in `catch_unwind` so a panic stops at the FFI boundary.
-- Memory. Go's cgo rules forbid C keeping Go pointers. Python objects held in Rust need the attach rules from Q7.
-
-Compatibility practice:
-- Semver per package, with versions released in lockstep.
-- Additive changes first: new optional fields, new event kinds that old subscribers ignore. Readers tolerate unknown fields.
-- Deprecation warnings in every language for at least one minor release before removal.
-- A shared conformance suite of golden event streams, run against all bindings in CI, so "same input, same events" is checked by tests.
-- API diff checks: `cargo-semver-checks` for Rust, plus stub or `.d.ts` diffs for Python and Node.
-
-Why this is likely: the listing requires "design or extend cross-language APIs with attention to consistency, usability, stability, and backwards compatibility", and the team's public repo ships exactly this binding set.
+Why this is likely: the listing names agent harnesses, tool calls and observability, and NVIDIA's NeMo Relay emits agent trajectory events for exactly this kind of analysis; the trace is illustrative.
 
 ### System design
 
-#### Q10. Design a framework-agnostic agent runtime library that captures scopes and lifecycle events from LangChain, LangGraph, and custom harnesses, with a Rust core.
+#### Q8. Design the telemetry path for an agent runtime so tracing never slows or breaks the agent
 
-Requirements. Plugs into existing frameworks as they are. Captures nested scopes (session, turn, agent, LLM call, tool call, sub-agent). Lets middleware observe or control calls. Exports to OpenTelemetry, raw JSONL and trajectory formats. Overhead budget: under about 5 microseconds per event on the caller's thread, and under 1 percent of end-to-end latency. LLM calls take 0.5 to 30 seconds, so the budget is mostly about CPU at high event rates. Expect 1,000 to 10,000 events per second per process for busy multi-agent runs.
+The runtime emits lifecycle events (scope start and end, LLM call, tool call, middleware decisions) from Rust, Python and Node.js hosts. Users export to OpenTelemetry backends and to files. Size it for 2,000 concurrent agents.
 
-Components:
-1. Scope stack. A tree of scopes with ids and parent ids. The active scope is tracked per task (Python contextvars, Node AsyncLocalStorage, Tokio task-local). Scope-local registrations disappear when the scope closes.
-2. Three integration modes, chosen by where the real call happens. Managed execution: the runtime invokes the tool or LLM function itself, so middleware can block or rewrite. Lifecycle hooks: the framework keeps control and reports start and end through callbacks, so the runtime observes only. Gateway: a local proxy for provider traffic when neither hook exists. NeMo Relay documents exactly these three modes.
-3. Middleware chain. See Q12.
-4. Event bus. Canonical, versioned lifecycle events go into a bounded queue. Subscribers and exporters consume off the hot path. NVIDIA's NeMo Agent Toolkit uses the same subject-observer shape, with an `IntermediateStepManager` publishing to a reactive stream and async exporters.
-5. Exporters. OpenTelemetry using the GenAI semantic conventions (`gen_ai.*` attributes, agent and tool spans), OpenInference, raw event JSONL, and trajectory files for replay and evals.
-6. Plugin config. Declarative files that install middleware and exporters, so users enable features without code changes.
+Start with volume:
 
-Data flow: framework callback -> adapter maps it to a core call -> core updates scope state, runs the middleware snapshot -> event goes to the queue -> worker thread fans out to subscribers -> exporters batch and send.
+```python
+agents, steps_per_s, events_per_step, bytes_per_event = 2_000, 5, 6, 600
+eps = agents * steps_per_s * events_per_step
+print(f"{eps:,} events/s, {eps * bytes_per_event / 1e6:.1f} MB/s, {eps * bytes_per_event * 86400 / 1e12:.2f} TB/day")
+for name, keep in [("keep all", 1.0), ("head sample 10%", 0.10), ("tail: errors + slow + 5%", 0.08)]:
+    print(f"{name}: {eps * bytes_per_event * 86400 * keep / 1e12:.2f} TB/day")
+```
 
-Hard parts:
-- Ordering. Events from one scope must be delivered in order. Use a per-process sequence number and FIFO publication. Re-entrancy: if a subscriber emits an event, queue it for the next dispatch round.
-- Correct parenting under concurrency (Q6).
-- Failure isolation. Exporter failures stay inside the exporter. Security middleware fails closed.
-- Version drift in adapters. Pin tested framework ranges, run a CI matrix, and degrade to "observe only" on unknown versions.
-- Shutdown. Flush with a deadline, from `atexit` and signal handlers.
+That is 60,000 events per second and about 3.1 TB a day unsampled. Agent prompts and outputs make events large, which is why the 600 byte average matters.
 
-Tradeoffs. A lowest-common-denominator event schema is portable but loses framework detail, so add an attributes map. Managed execution gives control but needs more integration work. Hooks are easy but read-only.
+Hot path: the agent thread only appends a compact event to a bounded per-process buffer (Q6's drop-oldest policy) and returns. Serialization, batching and network export happen on a separate thread or task. Capture overhead stays under about 1 microsecond per event and under 1% of agent CPU. Payloads such as full prompts are recorded as references or truncated by default, with an opt-in for full capture, because they are both the bulk of the bytes and the main privacy risk.
 
-Why this is likely: this is the team's charter in the listing (reusable building blocks for agent harnesses, middleware, event emission), and NVIDIA publishes two open-source projects with this architecture.
+Export: an in-process batcher sends to a local OpenTelemetry collector (OTLP over gRPC), and the collector handles retries, sampling and fan-out to backends. The alternative is exporting straight from the library to each backend. That has fewer moving parts, but every vendor client then runs inside the agent process, and a slow backend shows up as memory growth there. With a collector, the library has one exporter to keep correct.
 
-#### Q11. Design the telemetry export path so tracing can never take down or slow down the agent.
+Sampling: head sampling (decide at the root span) is cheap but drops the rare failing run you need. Tail sampling in the collector keeps every trace with an error, every trace above the p95 duration, and 5% of the rest, about 0.25 TB a day. I would use tail sampling, with the runtime marking errors and loop-guard trips on the span so the rule is simple.
 
-Requirements. At-most-once delivery is acceptable for telemetry. The application keeps running while export happens. Memory is bounded, overhead is measurable, and every dropped item is counted. Assume bursts of 20,000 spans per second while a swarm of sub-agents fans out, and an OTLP collector that is sometimes slow or down.
+Failure handling: when the collector is down, the buffer fills and drops oldest, the `dropped` counter is exported as a metric when the link recovers, and the agent never waits. Shutdown flushes with a deadline (for example 2 seconds) so a stuck exporter cannot block process exit.
 
-Design, inside the process:
-- `Span.End()` only enqueues. Python's BatchSpanProcessor defaults are a 2,048-span queue, 512-span batches, a 5-second schedule delay and a 30-second export timeout. At 20,000 spans per second, a 2,048 queue fills in about 100 ms of collector stall, so size the queue from burst rate times the outage you want to absorb (for example 64k spans at about 1 KB each, roughly 64 MB), or accept drops.
-- Export runs on a dedicated thread (Python) or a Tokio task (Rust core), off the event loop.
-- Drop policy: drop newest on overflow (the OTel default), or drop by priority so error spans and root spans survive. Expose `dropped_spans` as a metric.
-- Head sampling at the root keeps whole traces. Tail sampling (keep slow or errored traces) belongs in the collector.
+Why this is likely: Blind replies on NVIDIA senior system design describe infrastructure prompts that probe observability, latency and failure handling, and NeMo Relay ships OpenTelemetry-style exporters for agent events (medium confidence on the exact prompt).
 
-Outside the process: a local collector agent with `memory_limiter`, a persistent sending queue, and `block_on_overflow` set where blocking a collector is fine. A 2026 OpenTelemetry spec discussion supports making blocking an explicit opt-in for SDKs only, because `Span.End` must not block on a single-threaded loop.
+#### Q9. Design the provider layer that lets one agent harness call OpenAI Chat, OpenAI Responses and Anthropic Messages APIs
 
-Payload control:
-- Prompts and completions are large and sensitive. Capture them only when the user opts in, truncate at a set size, and redact in a sanitizer stage before export.
-- Put large bodies in span events or a side channel, and keep indexed attributes small.
+The harness wants one internal request and response type, streaming, tool calls, retries and token accounting, across providers whose wire formats differ in how they represent tool calls, system prompts and streamed deltas.
 
-Measuring overhead:
-- Microbenchmarks per span (target low single-digit microseconds).
-- Macrobenchmarks: the same agent workload with tracing off, sampled, and on, compared at p50 and p99 latency and CPU. The XPerf paper reports about 0.1 percent end-to-end overhead from its OpenTelemetry tracer, which is a fair target for a well-built exporter.
-- Run the framework's own test suite with instrumentation enabled, to show behavior stays the same.
+Core idea: one canonical internal model (messages with typed content parts: text, tool call, tool result, image) plus a codec per provider that converts both ways. Codecs are pure functions, so they get table-driven tests from recorded provider payloads, including streaming chunks.
 
-Failure handling:
-- Collector down: exponential backoff with jitter, then drop.
-- Shutdown: `force_flush` with a deadline.
-- Fork: reinitialize processors in the child, because threads don't survive `fork`.
+The hard parts:
 
-Why this is likely: the listing lists OpenTelemetry, exporters and observability pipelines, and the drop-versus-block question is an open OpenTelemetry spec discussion in 2026.
+1. Streaming tool calls. Providers stream tool-call arguments as partial JSON fragments, with different event shapes. The codec accumulates fragments per tool-call index and emits a complete tool call only when the provider signals the end of that block. Emitting partial arguments to middleware is a frequent source of bugs.
+2. Semantic gaps. Some fields have no equivalent on another provider (for example, reasoning content or cache-control hints). The canonical type keeps them as provider-specific extensions instead of dropping them, so a round trip through the harness does not lose data.
+3. Errors. Map each provider's errors onto a small set: rate limited (with retry-after), overloaded, invalid request, context too long, auth. Retry policy (Q1) keys off the canonical class.
 
-#### Q12. Design a middleware system for tool and LLM calls that supports guardrails, request rewriting, retries, and streaming.
+Alternatives: (a) a lowest-common-denominator API, simple but it throws away provider features users want; (b) passing raw provider payloads through with light wrappers, which loses nothing but pushes format handling into every middleware. I'd pick the canonical model with extensions, because middleware such as guardrails and tracing can then be written once.
 
-Requirements. Middleware can (a) block a call, (b) rewrite the request, (c) wrap execution (retry, cache, fall back to another model), (d) enrich or redact emitted events while the application sees the same data. Works across Python, Node and Rust callbacks, async throughout. Adds little latency next to a 1-second LLM call, with a target under 1 ms for the whole chain, excluding guardrails that call models.
+Numbers: the codec is on the hot path of every streamed chunk. At 2,000 agents streaming about 50 chunks a second each, that is 100,000 chunk conversions a second. In Rust that costs well under 1% of a core at a few microseconds each. The same work done per chunk across a Python binding costs more (Q12), so streaming conversion stays in the core and the binding receives batched deltas.
 
-Split middleware into families by lifecycle meaning, because with one generic hook type every bug becomes an ordering bug. The families are:
-1. Conditional guardrails run before execution and return allow or reject. A rejection is normal control flow and comes back as a return value.
-2. Request intercepts transform the request.
-3. Execution intercepts get `(request, next)` and may call `next` zero, one or several times: retries, fan-out, caching.
-4. Stream intercepts wrap chunk delivery and finalization.
-5. Event sanitizers and metadata injectors run on the publication path, after the fact, so the call proceeds without waiting on them.
+Why this is likely: NeMo Relay ships provider codecs for OpenAI Chat, OpenAI Responses and Anthropic Messages, and the listing asks for cross-language APIs and agent harness work (inferred team match, medium confidence).
 
-NeMo Relay's middleware docs follow this split. They also specify behaviors worth copying: entries run sequentially in priority order with a name tie-break; guardrails and intercepts fail closed when their callback throws; metadata injectors fail open and only their own output is dropped; middleware callbacks must not re-enter the runtime; each concurrent `next` call gets an isolated snapshot of scope state; and every `next` must finish before the intercept returns.
+#### Q10. Design a platform that runs 10,000 agent benchmark episodes per night against self-hosted model endpoints
 
-Hard parts:
-- Snapshot semantics. Take the middleware list as a snapshot when a call starts, so a running chain keeps the list it started with even when middleware is registered or removed mid-call.
-- Streaming. A guardrail on output either buffers (safe, but adds latency to the first token) or checks incrementally and cuts the stream off on a violation. Client-visible chunks already sent can't be recalled, so document that and send a terminal error event. For tool calls inside a stream, check the assembled arguments before the tool runs.
-- Retries inside execution intercepts. Retry only idempotent tools by default, cap attempts, share the request's deadline, and record each attempt as a child span.
-- Cross-language cost. A Python guardrail invoked from a Rust core pays a boundary crossing (Q7). Let simple policies (allowlists, regex redaction, size limits) run natively in Rust from config.
-- Testing. Run each middleware in isolation against recorded requests, plus property tests for ordering (A before B in all paths), and record guardrail decisions as events so evals can replay them.
+Teams want nightly benchmark runs of their agents (each episode is 5 to 50 LLM calls plus sandboxed tool use) against GPU-backed model endpoints, with results comparable night to night.
 
-Tradeoffs. Fail-closed improves safety and costs availability, so choose per family and make it visible in config. Several middleware kinds make the API larger, but each kind has clearer semantics than one generic hook.
+Capacity: 10,000 episodes x about 20 calls x about 3,000 tokens is about 600M tokens a night. At an aggregate 50,000 tokens per second across the endpoint pool, that takes about 3.3 hours, so the GPU pool size sets the schedule. Endpoint throughput is the budget everything else follows.
 
-Why this is likely: the listing names middleware, plugin systems, guardrails, policy engines and request/response interception. NVIDIA documents this design publicly.
+Components: a job API (benchmark suite, agent version, model endpoint, seed); a scheduler that admits episodes against a token budget per endpoint, not a fixed concurrency, because episodes differ by 10x in size; sandboxed workers (containers with network rules) that run the agent and its tools; and a results store of traces, scores and cost.
 
-#### Q13. Design a benchmarking harness that finds bottlenecks in agent workloads and catches performance regressions in CI.
+Isolation choices: containers per episode cost a few hundred milliseconds to start and are fine at this rate. MicroVMs give stronger isolation for untrusted tool code at a higher start cost. Shared long-lived workers are cheapest but leak state between episodes, which ruins comparability. I would use containers, with microVMs only for suites that execute model-written code.
 
-Requirements. Compare frameworks, library versions, models and serving backends on the same agent tasks. Report latency (p50, p95, p99), cost (tokens), throughput, and quality. Results must be reproducible despite nondeterministic LLM outputs. Runs per commit in CI in under 15 minutes, with a nightly full run.
+Comparability: pin model endpoint versions, set temperature and seeds where the endpoint supports them, record every LLM response so a failed episode can be replayed without GPU cost, and run a fixed control agent every night. If the control's score moves, the platform or endpoint changed, not the agents.
 
-The main idea is to separate harness overhead from model behavior. Agent control flow depends on model output, so two live runs take different paths. XPerf solves this with trace replay: record real agent runs as dependency graphs of LLM calls and tool calls, then replay the exact input token IDs (which keeps prefix-cache behavior) and force the recorded outputs, honoring dependencies and tool durations. That gives a deterministic workload for comparing serving systems or runtime libraries.
+Failure handling: endpoint errors are retried with backoff within an episode and do not count as agent failures. Episodes are idempotent and checkpointed by step, so a lost worker resumes. Each team has a quota, so one large suite cannot starve the rest.
 
-Three modes:
-1. Microbenchmarks for the library itself: event emit cost, middleware chain cost, boundary crossings, with `criterion` and `pyperf`. CI-gated with a noise threshold, for example fail on a slowdown over 5 percent with p < 0.01 across repeated runs.
-2. Replay benchmarks: recorded trajectories run against a mock or real serving backend. These measure harness overhead, parallelism and cache behavior.
-3. Live end-to-end evals on a fixed task set (correctness rubric, LLM judge calibrated against human labels), each task run 3 to 5 times and reported with confidence intervals. NVIDIA's NeMo Agent Toolkit `nat eval` already combines evaluators, latency stats and bottleneck analysis in one config, and AgentRace benchmarks framework efficiency the same way.
+Why this is likely: Blind replies on NVIDIA senior design rounds describe distributed inference or training platforms with scheduling, isolation and observability, and the listing mentions performance work on agent workloads (illustrative numbers).
 
-What to record per run: the full span tree (Q4) with timestamps, token counts per call, cache hit rate if the server reports it, retries, and environment (commit, model, server version, hardware).
+### Agent runtime depth
 
-Analysis:
-- Critical path and self time per step.
-- Time to first token versus decode time per call.
-- Idle gaps where the harness waited on itself (sequential tool calls that could run in parallel, slow callbacks).
-- Cost per successful task, so failed runs count toward the cost.
+#### Q11. Design the evaluation that proves a new context-compaction middleware does not hurt agent task success
 
-Hard parts:
-- Noise. Pin CPU frequency, use dedicated runners, warm up, and prefer many repetitions to a single long run.
-- Benchmark rot. Refresh traces from production regularly and keep a frozen set for long-term comparisons.
-- Overfitting to the suite. Keep a hidden holdout set.
+The middleware summarizes old turns when the context passes 60% of the window, and it cut tokens per task by about 35% in testing. Product wants proof that task success does not fall by more than 3 points from a 70% baseline.
 
-Why this is likely: the listing asks to "benchmark current agents to find bottlenecks", and lists evaluation and benchmarking systems as a plus. NVIDIA's toolkit and recent papers show the methods.
+Design: run the same task set with and without the middleware, using the same seeds and model version, and score each task with deterministic checks where possible (did the file change pass its tests, did the API state end correct). Use an LLM judge only for tasks without a checkable end state. A paired design is far cheaper than two independent samples, because most tasks succeed or fail either way:
 
-#### Q14. Design a model gateway for agent harnesses that routes requests across providers and self-hosted models, enforces rate limits, and keeps prefix caches warm.
+```python
+from statistics import NormalDist
 
-Requirements. OpenAI-compatible and Anthropic-compatible endpoints (`/v1/chat/completions`, `/v1/responses`, `/v1/messages`), because harnesses are moving to typed content blocks for interleaved thinking and tool calls. Per-tenant token rate limits. Routing by policy (cost, latency, capability). Streaming passthrough. Added latency under 5 ms at p99. Scale: 5,000 concurrent sessions, each sending a request every few seconds with a growing context of 20k to 200k tokens.
+def n_per_arm(p0, drop, alpha=0.05, power=0.8):
+    z = NormalDist().inv_cdf(1 - alpha / 2) + NormalDist().inv_cdf(power)
+    p1 = p0 - drop
+    return int(z ** 2 * (p0 * (1 - p0) + p1 * (1 - p1)) / drop ** 2) + 1
 
-Why caching matters. NVIDIA's Dynamo team reports that coding-agent sessions hit 85 to 97 percent prefix cache after the first call, with about 11.7 cache reads per token written, so each prefix is written once and read many times. Without cache-aware routing, turn 2 has roughly a 1/N chance of reaching the worker holding turn 1's KV cache, and every miss recomputes the whole prefix. That's seconds of prefill on long contexts, and it wastes GPU time.
+def paired_n(discordant_rate, drop, alpha=0.05, power=0.8):
+    z = NormalDist().inv_cdf(1 - alpha / 2) + NormalDist().inv_cdf(power)
+    return int(z ** 2 * discordant_rate / drop ** 2) + 1
 
-Components:
-1. Protocol frontend. Parses all three APIs into one internal representation of typed blocks.
-2. Admission. Token-bucket limits (Q1) per tenant and per upstream, keyed on estimated input tokens, with reconcile-after-response. Returns 429 with `Retry-After` when there's no capacity. Queues stay bounded.
-3. Router. Policy first (model choice, the kind of thing NVIDIA's Switchyard library does), then placement. For self-hosted pools, route to the worker with the longest matching prefix, scoring by block-hash overlap against current load. Use session affinity as a cheap fallback (hash on session id). For hosted providers, keep prompts stable so provider-side caching works: put dynamic content at the end and keep the tool order fixed.
-4. Agent hints. Let harnesses pass metadata such as session id, priority, or "this sub-agent is ephemeral". Dynamo's `nvext.agent_hints` is an example, used so the cache can evict short-lived sub-agent KV first.
-5. Streaming proxy. Zero-copy passthrough of server-sent events, with backpressure from the client socket to upstream.
-6. Observability. One span per request with routing decision, cache hit tokens, TTFT and tokens per second.
+print(n_per_arm(0.70, 0.03), paired_n(0.10, 0.03))
+assert paired_n(0.10, 0.03) < n_per_arm(0.70, 0.03)
+```
 
-Hard parts:
-- Load versus affinity. Pure prefix affinity creates hot spots. Cap per-worker queue depth and spill over when the expected queueing cost exceeds the prefill cost.
-- Failover. Fail over mid-stream only before the first token is sent. Afterwards, return an error event.
-- Accounting with cached tokens, which providers price differently.
-- Security. Per-tenant keys stay in the gateway, and request and response logging goes through redaction.
+Independent samples need about 3,760 episodes per arm to detect a 3 point drop. If about 10% of tasks flip outcome between versions, the paired test needs about 873 tasks. The flip rate comes from a pilot run, and agent nondeterminism raises it, so I'd run each task twice per arm and check that the flip rate between two runs of the same arm is well below the flip rate across arms.
 
-Tradeoffs. A gateway adds a hop and becomes a production dependency. Run it as a sidecar or library mode for single-process apps, and as a shared service for fleets.
+Report slices next to the average. Compaction should hurt long tasks most, so the set needs enough tasks that pass the 60% threshold, at least a few hundred, and I'd report success by task length bucket. I would also add targeted probes: facts given early in a session and needed late, and tool results referenced by ID many turns later.
 
-Why this is likely: the listing says to "cut cost and reduce latency" and to work with GPU-optimized inference teams, and NVIDIA's Dynamo and Switchyard publications describe these exact mechanisms for agent harnesses.
+Judge checks: compare the LLM judge to human labels on about 200 tasks, and only use it if agreement stays above about 85% on both arms. A judge that likes shorter contexts would bias the result.
 
-### Behavioral
+Ship rule: overall drop below 3 points at 95% confidence, no slice drop above 5 points, and the token saving confirmed on the same runs.
 
-#### Q15. Tell me about a change you made to a library other people depend on that caused a regression for users. How did you find it, fix it, and keep it from happening again?
+Why this is likely: the listing asks for performance work on agent workloads and benchmarking, and NVIDIA's NeMo Agent Toolkit course centers on agent evaluation and profiling (low to medium confidence on the round format).
 
-The interviewer is checking three things at once: systems debugging, ownership, and how you treat users of an open-source or shared library. Pick a story where the cause crossed a layer: a serialization change, a binding upgrade, an instrumentation hook that changed timing, an async change that broke ordering.
+#### Q12. Python calls into the Rust core on every event. Where does the time go, and how do you make it cheap?
 
-Structure it in this order:
-1. Impact in numbers. Who noticed, how (an issue, a dashboard, a benchmark), and how bad: "p99 for users with streaming enabled went from 40 ms to 300 ms after 2.3.0."
-2. Triage. How you reproduced it with the smallest case, and how you separated your code from theirs. Name the tools: `git bisect`, `py-spy` or `perf` flame graphs, tracing spans, a microbenchmark.
-3. Root cause, stated precisely: "the new callback wrapper held a lock while calling user code, so a slow subscriber blocked every emit," or "we converted a dict to a Rust struct per event."
-4. Fix and tradeoffs. What you shipped first (a revert or patch release) versus the real fix, and how you told users (changelog, issue reply, migration note).
-5. Prevention. The benchmark gate, conformance test or compatibility matrix you added, and whether it caught anything later.
+A profile shows 18% of agent CPU in the binding layer at 50,000 events per second. Explain the costs and choose a fix.
 
-What makes a strong answer at senior level: you shipped a patch release quickly instead of waiting for a perfect fix; you credit the user who reported it; you can explain the mechanism down to threads, the event loop, or memory; and you changed the process (CI gates, deprecation policy) along with the code. If your experience is with internal code, an SDK used by several teams works, as long as you show the same care for people who had your code handed to them.
+A quick measurement on a laptop of a plain C call through `ctypes`, against a Python builtin:
 
-Why this is likely: NVIDIA candidates report project deep dives in every round, and the listing asks for "strong collaboration with the open-source community" plus systems-level debugging across bindings and callbacks.
+```python
+import ctypes, time
+libc = ctypes.CDLL(None)
+labs = libc.labs
+labs.argtypes, labs.restype = [ctypes.c_long], ctypes.c_long
+n = 200_000
+t0 = time.perf_counter()
+for i in range(n):
+    labs(-i)
+print(f"ctypes call: {(time.perf_counter() - t0) / n * 1e6:.2f} us per call")
+for name, us in [("per-event at 1 us", 1.0), ("per-event at 5 us", 5.0), ("batch of 256 at 20 us", 20 / 256)]:
+    print(f"{name}: {50_000 * us / 1e6 * 100:.1f}% of one core")
+```
+
+The bare call costs about 0.2 microseconds. Real binding calls cost more, because each event also converts Python objects into Rust types (dict to struct, str to UTF-8), may acquire or release the GIL, and may allocate. At 1 to 5 microseconds per event, 50,000 events a second costs 5% to 25% of a core, which matches the profile.
+
+Options:
+
+1. Batch. Python appends events to a local list and crosses into Rust every 256 events or every 10 ms. The call overhead per event drops by about 100x. Cost: up to 10 ms of extra latency on event delivery, fine for telemetry and wrong for middleware that must run before the call proceeds.
+2. Cheaper conversion. Pass pre-encoded bytes (for example, a compact binary encoding built once) instead of dicts, or use typed classes defined in Rust so fields are already native.
+3. Release the GIL during heavy Rust work so other Python threads keep running. This does not cut the per-call cost.
+4. Move the loop. If Python only forwards provider stream chunks, let the Rust core own the stream and hand Python finished results (Q9).
+
+My choice: batching for observational events, and typed Rust-backed classes for the events that synchronous middleware must see. I would confirm with the same profile, aiming for binding overhead under 2% of CPU, and add a microbenchmark to CI so a regression shows up as a number.
+
+Why this is likely: the listing asks for performance across language bindings and serialization, and NeMo Relay's repo guidance names Rust as the runtime with a PyO3 bridge for Python (inferred team match, medium confidence).
+
+#### Q13. Sub-agents running concurrently get the wrong parent spans. Explain why and fix it
+
+The tracing scope stack is a module-level list. With two sub-agents started by `asyncio.gather`, the recorded parents are wrong.
+
+```python
+import asyncio
+
+STACK, records = [], []
+
+class scope:
+    def __init__(self, name):
+        self.name = name
+    def __enter__(self):
+        records.append((self.name, STACK[-1] if STACK else None))
+        STACK.append(self.name)
+    def __exit__(self, *exc):
+        STACK.pop()
+
+async def sub_agent(name):
+    with scope(name):
+        await asyncio.sleep(0.01)
+        with scope(f"{name}.llm"):
+            await asyncio.sleep(0)
+
+async def main():
+    with scope("root"):
+        await asyncio.gather(sub_agent("a"), sub_agent("b"))
+
+asyncio.run(main())
+print(dict(records))
+```
+
+Running it prints `{'root': None, 'a': 'root', 'b': 'a', 'a.llm': 'b', 'b.llm': 'a.llm'}`. Both tasks push onto one shared list, so whichever task ran last decides the parent. Sub-agent `b` appears to be a child of `a`, and every later span is attached to the wrong tree.
+
+The fix is per-task state. In Python, `contextvars` gives each asyncio task a copy of the context at creation, so siblings start with the same parent and cannot see each other's pushes. The stack is stored as an immutable tuple so a child never mutates its parent's view:
+
+```python
+import asyncio, contextvars
+
+_stack = contextvars.ContextVar("scope_stack", default=())
+records = []
+
+class scope:
+    def __init__(self, name):
+        self.name = name
+    def __enter__(self):
+        parent = _stack.get()[-1] if _stack.get() else None
+        records.append((self.name, parent))
+        self.token = _stack.set(_stack.get() + (self.name,))
+        return self
+    def __exit__(self, *exc):
+        _stack.reset(self.token)
+
+async def sub_agent(name):
+    with scope(name):
+        await asyncio.sleep(0.01)
+        with scope(f"{name}.llm"):
+            await asyncio.sleep(0)
+
+async def main():
+    with scope("root"):
+        await asyncio.gather(sub_agent("a"), sub_agent("b"))
+
+asyncio.run(main())
+assert dict(records) == {"root": None, "a": "root", "b": "root", "a.llm": "a", "b.llm": "b"}
+```
+
+The same bug has a different fix in each binding. Node.js needs `AsyncLocalStorage`. Rust needs the parent passed explicitly or held in a task-local, because a thread-local breaks when Tokio moves tasks between threads. Threads started from Python need `contextvars.copy_context().run(...)`, because a new thread starts with an empty context. Passing a scope handle explicitly is the alternative everywhere. It is the most reliable, but it changes every user-facing signature, so I'd use implicit context with an explicit override for the cases above.
+
+Why this is likely: NeMo Relay's guidance says scope stacks establish ownership and event parentage across bindings, and the listing asks for async programming and cross-language APIs.
+
+#### Q14. One runtime ships Rust, Python, Node.js and Go bindings. How do you keep behavior consistent and avoid breaking users?
+
+The Rust core is the source of truth. Python and Node.js are primary bindings; Go and a raw C interface are experimental. Users report that a field renamed in Rust broke Node.js users silently, while Python raised an error.
+
+The root cause is that each binding hand-maps the core types, so a rename lands differently in each. I would fix the process in three parts.
+
+Contract. Define the public types and events once, in Rust or in a schema, and generate the binding type stubs (Python type stubs, TypeScript declarations, Go structs) from it. A rename then fails the build in every binding, including the lenient ones. The alternative is hand-written bindings with conformance tests. It gives each language a more natural API, but drift is caught only as well as the tests cover it. I'd generate the data types and hand-write the small idiomatic layer on top (context managers in Python, promises in Node.js).
+
+Conformance tests. One shared set of scenario files (inputs and expected event sequences) runs against every binding in CI. When a public behavior changes in Rust, the scenario changes, and every binding that exposes it must pass.
+
+Versioning. Semantic versioning for the public API, with all bindings released together under one version number, so users never need a compatibility matrix. Deprecate before removing: keep the old field name as an alias for at least one minor release, emit a deprecation warning in each language's normal way, and list it in the changelog. The event schema carries its own version, so exporters and downstream consumers can read old and new events.
+
+Async models: Rust futures map to Python awaitables and Node.js promises, and cancellation maps to `CancelledError` in Python and `AbortSignal` in Node.js. Those mappings belong in the conformance scenarios too, because they are where bindings most often diverge.
+
+Why this is likely: NeMo Relay's repository guidance says a public runtime change requires identifying which bindings expose it and keeping those surfaces aligned, and the listing asks for cross-language APIs and open-source libraries.
+
+### Hiring manager
+
+#### Q15. Tell me about a change to a library other people depended on that you had to make with incomplete information. How did you decide, and what happened?
+
+Tell one specific story with the trade-off, the decision rule, and the measured result.
+
+Example structure. Situation: our open-source tracing library had one async API, and two large users needed a synchronous one for their frameworks. We could not see most of our users' code, only download counts and issues. Task: add the sync API without breaking async users and without maintaining two code paths forever.
+
+Action: I wrote a short design note with three options: a separate sync package, a sync wrapper that runs the async core on a private event loop, or a core rewritten as sync with async wrappers. I picked the wrapper because it reused the tested core, and I measured its overhead (about 15 microseconds per call against a 2 millisecond median call), which the two users accepted. To reduce the unknowns, I searched public repositories that imported our package to see how people used the API, and asked the two users to run a release candidate in their CI for a week. One of them found that the private loop broke inside Jupyter, which already runs a loop. We detected that case and raised a clear error with the async alternative instead of hanging.
+
+Result: we shipped in one minor release with no breaking changes, the issue about a sync API closed, and adoption by one of the frameworks brought new contributors. What I would change: I would have published the release candidate to all users, because the Jupyter case was common.
+
+Expect follow-ups on how you handled disagreement in review, how you decided what to leave out, and how you communicated the change to users.
+
+Why this is likely: NVIDIA's hiring page and candidate reports describe hiring manager rounds that dig into past projects and decisions, and the listing asks for open-source library work used by others.
 
 ## Prep checklist
 
-- [ ] Read the NeMo Relay docs end to end: concepts (scopes, events, middleware, subscribers, codecs), the ecosystem page, and the three integration modes. Be ready to critique one design choice.
-- [ ] Run the NeMo Agent Toolkit profiler and `nat eval` on a small LangChain workflow and read the nested-stack bottleneck output.
-- [ ] Write Q1 to Q4 from memory in Python with no IDE, then rewrite Q2 in Rust with `tokio::sync::Semaphore`, `tokio::time::timeout` and `JoinSet`.
-- [ ] Practice LeetCode 146 (LRU Cache) with a hand-written doubly linked list, 56 (Merge Intervals), 1195 (Fizz Buzz Multithreaded) and 347 (Top K Frequent Elements). All four match patterns in NVIDIA reports.
-- [ ] Build a tiny PyO3 extension with maturin. Benchmark an empty call, a dict-payload call and a batched call, then try `intern!`, `cast` versus `extract`, and `Python::detach`.
-- [ ] Reproduce the async generator contextvars leak from Q6 and fix it, then read google/adk-python issue 5722 and its revert history.
-- [ ] Read the OpenTelemetry BatchSpanProcessor spec and issue 5178 on blocking versus dropping. Know the Python SDK defaults (2048 queue, 512 batch, 5 s delay).
-- [ ] Read the OpenTelemetry GenAI semantic conventions for agent and tool spans (`gen_ai.*` attributes).
-- [ ] Read the Tokio docs on bounded `mpsc`, `Semaphore`, cancel safety in `select!`, and `tracing`'s `Instrument`.
-- [ ] Read the Dynamo agentic inference post (KV-aware routing, agent hints) and the XPerf paper (trace replay for agent benchmarks).
-- [ ] Prepare one regression story and one cross-layer performance story, each with before and after numbers.
+- [ ] Write a REST client with retries, backoff with jitter, `Retry-After` and fail-fast 4xx handling from memory, with tests that need no network.
+- [ ] Practice multi-part Python parsing tasks under time, with malformed lines and out-of-order events.
+- [ ] Implement a hash map and a string utility in C or C++ without standard containers, and run them under AddressSanitizer.
+- [ ] Rehearse bounded concurrency, cancellation and timeouts in asyncio and in Tokio.
+- [ ] Review a pull request by hand for hallucinated APIs, secrets in logs, missing failure paths and ring buffer index errors.
+- [ ] Prepare an agent trace debugging story: the symptom in traces, the root cause, the fix and the eval that proved it.
+- [ ] Be able to size telemetry volume and choose a sampling strategy with numbers.
+- [ ] Know the costs of crossing a Python or Node.js binding, and when to batch.
+- [ ] Explain how context propagates across async tasks in Python, Node.js and Rust.
+- [ ] Prepare one story about changing a library other people depend on, with the trade-off and the result.
+- [ ] Plan to do every round without AI tools and to bring a physical photo ID for the onsite.
 
 ## Sources
 
-- https://www.nvidia.com/en-us/about-nvidia/careers/how-we-hire/
-- https://interviewing.io/nvidia-interview-questions
-- https://igotanoffer.com/en/advice/nvidia-software-engineer-interview
-- https://www.interviewquery.com/guides/nvidia-software-engineer
-- https://leetcode.com/discuss/post/7542688
-- https://www.reddit.com/r/OfferEngineering/comments/1vycmly/nvidia_senior_software_engineer_interview_process
-- https://www.reddit.com/r/AskProgrammers/comments/1ve7bzw/nvidia_swe_interview_2026_a_practical_coding
-- https://www.reddit.com/r/leetcode/comments/1q06zz6/2026_interview_prep
-- https://www.reddit.com/r/leetcode/comments/1akv8i9/1700_questions_solved_nvidia_panel_round
-- https://www.teamblind.com/post/nvidia-interview-process-t01yxggv
-- https://www.teamblind.com/post/nvidia-software-engineer-interview-xrq6ekjg
-- https://www.teamblind.com/post/looking-for-tips-for-interview-prep-at-nvidia-ebf382jn
-- https://dataford.io/interview-guides/nvidia/agentic-ai-engineer
-- https://www.interview101.com/interviews/nvidia/software-engineer
-- https://www.fastprep.io/problems/nvidia-lru-key-value-cache
-- https://interviewsolver.com/interview-questions/nvidia
-- https://github.com/NVIDIA/NeMo-Relay
-- https://docs.nvidia.com/nemo/relay
-- https://docs.nvidia.com/nemo/relay/about-nemo-relay/ecosystem
-- https://docs.nvidia.com/nemo/relay/about-nemo-relay/concepts/middleware
-- https://github.com/NVIDIA/NeMo-Agent-Toolkit
-- https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/develop/docs/source/improve-workflows/profiler.md
-- https://docs.nvidia.com/nemo/agent-toolkit/latest/run-workflows/observe/observe.html
-- https://www.hoangndst.com/blog/nvidia-nemo-agent-toolkit
-- https://github.com/NVIDIA-NeMo/Switchyard
-- https://docs.nvidia.com/dynamo/digest/agentic-inference
-- https://arxiv.org/html/2608.20370v1
-- https://agent-race.github.io/home
-- https://github.com/google/adk-python/issues/5722
-- https://www.querystack.tech/post/instrumenting-an-async-python-service-with-opentelemetry-traces-metrics-and-context-propagation-c77f76
-- https://github.com/open-telemetry/opentelemetry-specification/issues/5178
-- https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-agent-spans.md
-- https://pyo3.rs/main/performance.html
-- https://pyo3.rs/v0.30.1/free-threading
-- https://its-saeed.github.io/learn-by-building/async/23-backpressure.html
-- https://github.com/hawkw/thingbuf/blob/main/mpsc_perf_comparison.md
-- https://docs.python.org/3/library/asyncio-task.html
+- NVIDIA, How We Hire: https://www.nvidia.com/en-us/about-nvidia/careers/how-we-hire
+- NeMo Relay repository guidance: https://github.com/NVIDIA/NeMo-Relay/blob/main/AGENTS.md
+- NeMo Relay repository: https://github.com/nvidia/nemo-relay
+- Candidate report, NVIDIA practical coding round: https://www.reddit.com/r/AskProgrammers/comments/1ve7bzw/nvidia_swe_interview_2026_a_practical_coding
+- Candidate report, NVIDIA senior software engineer loop: https://leetcode.com/discuss/post/7542688
+- Glassdoor, NVIDIA senior software engineer interviews: https://www.glassdoor.com/Interview/NVIDIA-Senior-Software-Engineer-Interview-Questions-EI_IE7633.0,6_KO7,31.htm
+- Blind, NVIDIA senior software engineer interview thread: https://www.teamblind.com/post/interviewing-at-nvidia-for-a-senior-software-engineer-role-ugq0ba2b
+- Blind, NVIDIA in-person panel thread: https://www.teamblind.com/post/upcoming-nvidia-in-person-panel-interview-rpu16d4v
+- calibrd, NVIDIA interview guide: https://www.calibrd.com/interview-prep/nvidia-interview
+- prepare.sh, NVIDIA interview process: https://prepare.sh/articles/nvidia-interview-process-2026
+- DeepLearning.AI, NeMo Agent Toolkit course: https://www.deeplearning.ai/courses/nvidia-nat-making-agents-reliable
+- Dataford, NVIDIA agentic AI engineer guide (vendor, low confidence): https://dataford.io/interview-guides/nvidia/agentic-ai-engineer
