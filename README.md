@@ -6,10 +6,11 @@ Organized by company, then by role. Each role page has the likely interview loop
 
 These are estimates built from public job listings, public hiring guides and candidate reports. They are not real or leaked questions.
 
-**7 companies, 7 roles, 105 questions.**
+**8 companies, 8 roles, 120 questions.**
 
 ## Contents
 
+- [Capital One](#capital-one)
 - [Databricks](#databricks)
 - [Google](#google)
 - [Google DeepMind](#google-deepmind)
@@ -17,6 +18,10 @@ These are estimates built from public job listings, public hiring guides and can
 - [Netflix](#netflix)
 - [NVIDIA](#nvidia)
 - [Perplexity](#perplexity)
+
+## Capital One
+
+- [Applied Researcher 5 (AI Foundations, LLM Core and Agentic AI)](capital-one/applied-researcher-llm-core-agentic-ai/): 15 questions
 
 ## Databricks
 
