@@ -4,555 +4,577 @@ Likely interview questions based on the public job listing, public hiring guides
 
 ## Likely interview loop (estimate)
 
-Meta's official prep guide for this title lists 45-minute coding, ML system design, and behavioral interviews. The details below come from that guide plus candidate reports from 2025 and 2026, and individual loops vary.
+This listing asks for 12+ years of large-scale ML systems work and org-wide technical strategy, so read it as a very senior (roughly E7) loop. No level is stated, and the round mix at Meta depends on level, so treat this as an estimate.
 
-1. Pre-screen. This is a written questionnaire on Meta's candidate portal, a recruiter call, or both. Several reports say senior candidates are asked about team size, scope, the split between coding and leadership, and how they use AI tools and judge their output.
-2. Technical screen. This is 45 minutes in CoderPad with two data structures and algorithms problems and no code execution. Some senior candidates instead get a 60-minute AI-native screen. Reported problems include merging two sorted interval lists, Nested List Weight Sum, Range Sum of BST, and path simplification.
-3. Full loop of 4 to 5 interviews:
-   - One standard coding round with two medium problems in about 40 minutes. Meta's guide says it does not ask dynamic programming. The guide scores problem solving, coding, verification, and communication.
-   - One AI-enabled coding round of 60 minutes in a multi-file CoderPad project with a built-in assistant. It usually moves from fixing a bug, to implementing the core function, to optimizing against larger tests. Some tracks run an ML coding variant instead, with sparse matrix-vector products and k-nearest-neighbor search.
-   - One or two ML system design rounds. Prompts center on ranking and recommendation, ads, and integrity. Reports say E6 and above loops often include two, and that a weak design round is the usual reason for down-leveling.
-   - One behavioral round scored on conflict, ambiguity, driving results, communication, and growth.
-4. Hiring committee review, then team matching. Candidate reports say a pass in the debrief does not guarantee an offer, and that team matching can take weeks.
+1. Prescreen. A recruiter call, and for some roles a written prescreen form. Reported prompts include which AI tools you use every day and how you check the quality of AI output. Virtual.
+2. Technical screen. 45 minutes in CoderPad, two LeetCode-style medium problems, code not executed, no AI. Senior candidates sometimes skip it, and some now get a 60 minute "AI-native" screen instead (one coding problem plus questions on how you use AI). Virtual.
+3. AI-enabled coding. 60 minutes in a three-panel CoderPad (file tree, editor with test runner, AI chat). One multi-file project in phases: read the code and fix a failing test, build the core feature, then optimize against larger inputs. Meta's careers FAQ says the assistant is built in and candidates are expected to use it; outside AI tools are not allowed. Prep guides report this is the only coding round at E7 and above.
+4. ML system design, one to three rounds of 45 minutes. Business goal, data, features, model, evaluation, serving. Prompts are now sub-domain focused (GenAI and LLM, ranking and recommendation, computer vision). Meta says design interviews also run in CoderPad with Mermaid diagrams and the same AI assistant. Design performance drives the level decision.
+5. AI-enabled system design (newer variant). An AI-assisted design round with AI-flavored prompts such as a RAG pipeline or an agent with tools and guardrails. Reported for AI-native loops; it may replace or sit beside one ML design round. Lower confidence for this track.
+6. Behavioral. 45 minutes with new AI-oriented signal areas (AI-driven impact, continuous AI learning, partnering, ambiguity, communication). Expect many follow-ups.
+7. Cross-functional or project retrospective (senior loops). You walk through one large project in detail: its scope, the trade-offs, how you aligned several teams, and the measured impact.
+8. Hiring committee and team match. Meta says the process takes a few months end to end.
 
-For a role at this scope, expect the design rounds to go deep into training efficiency, sharding, calibration, and data integrity, because those are the problems the listing names.
+Every report found ran the loop virtually. The questions below follow that mix, with six coding tasks (five in the AI-enabled format, one classic screen problem), three design rounds, four ML depth questions, one cross-functional question and one behavioral question.
 
 ## Questions and answers
 
-### Coding
+### AI-enabled coding (AI assistant allowed, as in Meta's AI-enabled round)
 
-#### Q1. Minimum remove to make valid parentheses (LeetCode 1249)
+#### Q1. Fix the leaking point-in-time join in this training data repo, then add a feature TTL
 
-Given a string of lowercase letters, `(` and `)`, remove the minimum number of parentheses so the result is valid, and return any valid result. Valid means every `)` closes an earlier unmatched `(`, and no `(` is left open.
+You get this repo in CoderPad. `test_join.py::test_no_future_leak` fails.
 
-Each unmatched `)` must go, and you find those in one left-to-right scan by keeping a stack of indexes of open parentheses. Whatever is left on the stack at the end is an unmatched `(`, and those go too. Removing exactly the unmatched characters is minimal, because each one has to be removed in any valid result.
+```text
+training_data/
+  features.py      # FeatureRow(user_id, ts, value) loaders
+  labels.py        # LabelRow(user_id, label_ts, y)
+  join.py          # point_in_time_join(labels, feature_rows)
+  test_join.py     # 6 tests, 1 failing
 
-```python
-def min_remove_to_make_valid(s: str) -> str:
-    chars = list(s)
-    open_idx = []                 # indexes of unmatched "("
-    for i, ch in enumerate(chars):
-        if ch == "(":
-            open_idx.append(i)
-        elif ch == ")":
-            if open_idx:
-                open_idx.pop()
-            else:
-                chars[i] = ""     # unmatched ")"
-    for i in open_idx:
-        chars[i] = ""             # unmatched "("
-    return "".join(chars)
+# join.py (current)
+import pandas as pd
+def point_in_time_join(labels, feats):
+    labels = labels.sort_values("label_ts")
+    feats = feats.sort_values("ts")
+    return pd.merge_asof(labels, feats, left_on="label_ts", right_on="ts",
+                         by="user_id", direction="backward")
 
-assert min_remove_to_make_valid("lee(t(c)o)de)") == "lee(t(c)o)de"
-assert min_remove_to_make_valid("a)b(c)d") == "ab(c)d"
-assert min_remove_to_make_valid("))((") == ""
+FAILED test_no_future_leak: expected value 0.3 for u1, got 0.9
 ```
 
-Time is O(n) and space is O(n) for the character list and the stack. The standard screen runs no code, so trace these edge cases out loud: an empty string, letters only, all closing parentheses, and nested input such as `(((`.
+Phase 2: drop any feature older than 7 days. Phase 3: make it fast for 50M labels.
 
-Expect these follow-ups:
+The bug is leakage. `merge_asof` with `direction="backward"` allows exact matches by default, so a feature written at the same timestamp as the label (often the label event itself updating the feature) joins in. The fix is "strictly before", which in pandas is `allow_exact_matches=False`. The function also returns rows sorted by time instead of input order, which breaks any caller that zips results back to labels.
 
-- Use O(1) extra space beyond the output. Make two passes with a balance counter. Left to right, drop any `)` that would push the balance negative. Then go right to left and drop the last `balance` copies of `(`.
-- Handle three bracket types. Push the expected closer onto the stack and compare on each closer. A related reported variant asks you to count the mismatched brackets instead of removing them.
-- Return every minimal result (LeetCode 301). This needs a BFS over removals with deduplication, which costs exponential time in the worst case. Say so before you start coding.
+With the assistant, I would first ask it to explain `join.py` and list every caller of `point_in_time_join`, and check that against the file tree myself. Then ask for the minimal fix plus a test for the equal-timestamp case. Here is a wrong AI output I'd expect to catch. Asked for the TTL, it added `tolerance=pd.Timedelta("7D")` and also changed the direction to `"nearest"`, which would pull future features again. I reject that hunk and keep `"backward"`.
 
-Why this is likely: 1249 is the most frequently reported Meta problem in a 1point3acres aggregation covering March 2025 to October 2026, and a bracket-counting variant appears in a candidate-sourced MLE guide.
-
-#### Q2. Binary tree vertical order traversal (LeetCode 314)
-
-Given a binary tree, return its node values column by column from left to right. Inside a column, list nodes from top to bottom. Nodes in the same row and column go left to right.
-
-BFS already visits nodes top to bottom and left to right, so each column comes out in the right order with no sort. Track the minimum and maximum column so that you can output the columns in order without sorting the keys.
+A dependency-free version of the fixed logic (what I would put in the reference test helper):
 
 ```python
-from collections import defaultdict, deque
+from bisect import bisect_left
+from datetime import datetime, timedelta
 
-class TreeNode:
-    def __init__(self, val, left=None, right=None):
-        self.val, self.left, self.right = val, left, right
+TTL = timedelta(days=7)
 
-def vertical_order(root):
-    if root is None:
-        return []
-    cols = defaultdict(list)
-    lo = hi = 0
-    q = deque([(root, 0)])
-    while q:
-        node, c = q.popleft()
-        cols[c].append(node.val)
-        lo, hi = min(lo, c), max(hi, c)
-        if node.left:
-            q.append((node.left, c - 1))
-        if node.right:
-            q.append((node.right, c + 1))
-    return [cols[c] for c in range(lo, hi + 1)]
+def build_index(feature_rows):
+    idx = {}
+    for user, ts, value in sorted(feature_rows, key=lambda r: (r[0], r[1])):
+        times, values = idx.setdefault(user, ([], []))
+        times.append(ts)
+        values.append(value)
+    return idx
 
-t = TreeNode(3, TreeNode(9, TreeNode(4), TreeNode(0)),
-                TreeNode(8, TreeNode(1), TreeNode(7)))
-assert vertical_order(t) == [[4], [9], [3, 0, 1], [8], [7]]
-```
-
-Time and space are both O(n). Columns are contiguous integers, so `range(lo, hi + 1)` never hits a missing key.
-
-Plain DFS breaks the top-to-bottom rule, because it visits a deeper left node before a shallower right node in the same column. If you use DFS, record `(row, order)` and sort each column, which costs O(n log n).
-
-Expect these follow-ups:
-
-- Break ties by value inside the same row and column (LeetCode 987). Collect `(row, value)` per column and sort.
-- Return one flattened list instead of a list of lists. This variant appears in a 2025 E5 candidate report.
-- Explain the order of growth for a skewed tree. The queue holds O(width) nodes and the column map holds O(n) values.
-
-Why this is likely: 314 is the second most reported Meta problem in the 1point3acres aggregation, and a modified version appears in a 2025 E5 MLE onsite report.
-
-#### Q3. Merge two sorted lists of disjoint intervals into their union
-
-You get two lists of closed intervals. Each list is sorted by start, and the intervals inside each list do not overlap. Return the sorted union as non-overlapping intervals. For example, `[[1,3],[6,8]]` and `[[2,4],[8,10],[12,13]]` give `[[1,4],[6,10],[12,13]]`.
-
-Walk both lists the way the merge step of merge sort does. Always take the interval with the smaller start, then either extend the last output interval or append a new one. This avoids concatenating and sorting, which costs O((m+n) log(m+n)) and throws away the fact that the inputs are already sorted.
-
-```python
-def union_intervals(a, b):
-    i = j = 0
+def point_in_time_join(labels, feature_rows, default=None):
+    idx = build_index(feature_rows)
     out = []
-    while i < len(a) or j < len(b):
-        if j == len(b) or (i < len(a) and a[i][0] <= b[j][0]):
-            cur = a[i]; i += 1
+    for user, label_ts, y in labels:
+        times, values = idx.get(user, ([], []))
+        i = bisect_left(times, label_ts) - 1      # strictly before label_ts
+        if i >= 0 and label_ts - times[i] <= TTL:
+            out.append((user, label_ts, values[i], y))
         else:
-            cur = b[j]; j += 1
-        if out and cur[0] <= out[-1][1]:       # overlaps or touches
-            out[-1][1] = max(out[-1][1], cur[1])
-        else:
-            out.append([cur[0], cur[1]])
+            out.append((user, label_ts, default, y))
     return out
 
-assert union_intervals([[1, 3], [6, 8]], [[2, 4], [8, 10], [12, 13]]) == [[1, 4], [6, 10], [12, 13]]
-assert union_intervals([], [[1, 2]]) == [[1, 2]]
-assert union_intervals([[1, 5]], [[2, 3]]) == [[1, 5]]
+t = datetime(2025, 1, 10, 12)
+feats = [("u1", t - timedelta(hours=2), 0.3), ("u1", t, 0.9),
+         ("u2", t - timedelta(days=8), 0.5), ("u3", t - timedelta(days=7), 0.4)]
+got = point_in_time_join([("u1", t, 1), ("u2", t, 0), ("u3", t, 1), ("u4", t, 0)], feats)
+assert [g[2] for g in got] == [0.3, None, 0.4, None]
 ```
 
-Time is O(m + n) and extra space is O(1) beyond the output. Append a copy of `cur`, because extending `out[-1]` would otherwise mutate the caller's input.
+Tests I run: equal timestamp (no leak), TTL boundary at exactly 7 days (kept), just over (dropped), unknown user, and input order preserved. For phase 3 there are two options. A per-label bisect costs O((L + F) log F) and is easy to reason about. A single sorted merge per user (what `merge_asof` does) is O(L log L + F log F) but vectorized. For 50M labels I keep `merge_asof` with `allow_exact_matches=False` and `tolerance`, after a `reset_index` so I can restore input order, because the vectorized merge is about 10x to 50x faster than a Python loop at that size.
 
-Edge cases to raise:
+Why this is likely: Meta's careers FAQ describes the built-in assistant, and candidate reports and prep guides describe the fix-a-failing-test, build, then optimize phases; the leakage theme comes from the listing's focus on data integrity and feature consistency.
 
-- Whether touching intervals such as `[1,2]` and `[2,3]` merge. They do with closed intervals and do not with half-open ones, so ask.
-- Either list empty.
-- One interval containing several from the other list.
+#### Q2. Review this AI-generated model evaluation module before it gates launches
 
-Expect these follow-ups:
-
-- Return the intersection instead (LeetCode 986). Use the same two pointers and advance whichever interval ends first.
-- Merge k lists. Use a heap of list heads, which costs O(N log k).
-- Merge inputs that arrive as iterators too large for memory. The algorithm is already streaming, so explain that it holds only the current output interval.
-
-Why this is likely: this exact union variant appears in a January 2025 Meta MLE phone screen report on LeetCode Discuss and in a 2025 E5 onsite report, and Exponent lists it among recent screen questions.
-
-#### Q4. Sparse vector dot product and sparse matrix-vector multiplication
-
-Part one: represent sparse vectors as sorted `(index, value)` pairs and compute their dot product. Part two: given a sparse matrix as COO triples `(row, col, value)` and a dense vector `x`, compute `y = A x` in time proportional to the number of nonzeros.
+The assistant wrote this to compute normalized entropy (NE) and calibration for a click model trained with negative downsampling. Review it like a PR.
 
 ```python
-def sparse_dot(a, b):
-    """a, b: lists of (index, value) sorted by index."""
-    i = j = 0
-    acc = 0.0
-    while i < len(a) and j < len(b):
-        if a[i][0] == b[j][0]:
-            acc += a[i][1] * b[j][1]; i += 1; j += 1
-        elif a[i][0] < b[j][0]:
-            i += 1
-        else:
-            j += 1
-    return acc
+from sklearn.metrics import normalized_entropy   # used for a cross-check
+import math
 
-def coo_to_csr(n_rows, entries):
-    indptr = [0] * (n_rows + 1)
-    for r, _, _ in entries:
-        indptr[r + 1] += 1
-    for r in range(n_rows):
-        indptr[r + 1] += indptr[r]          # prefix sums give row offsets
-    cols = [0] * len(entries)
-    vals = [0.0] * len(entries)
-    nxt = indptr[:-1].copy()
-    for r, c, v in entries:                  # counting sort by row
-        k = nxt[r]; cols[k] = c; vals[k] = v; nxt[r] += 1
-    return indptr, cols, vals
+def ne(preds, labels):
+    base = sum(preds) / len(preds)
+    ll = -sum(y * math.log(p) + (1 - y) * math.log(1 - p)
+              for p, y in zip(preds, labels)) / len(labels)
+    return ll / -(base * math.log(base) + (1 - base) * math.log(1 - base))
 
-def csr_matvec(indptr, cols, vals, x):
-    y = [0.0] * (len(indptr) - 1)
-    for r in range(len(y)):
-        acc = 0.0
-        for k in range(indptr[r], indptr[r + 1]):
-            acc += vals[k] * x[cols[k]]
-        y[r] = acc
-    return y
+def recalibrate(p, neg_keep_rate):
+    return p * neg_keep_rate
 
-ip, c, v = coo_to_csr(3, [(2, 0, 1.0), (0, 1, 2.0), (0, 2, 3.0), (2, 2, 4.0)])
-assert csr_matvec(ip, c, v, [1, 1, 2]) == [8.0, 0.0, 9.0]
-assert sparse_dot([(0, 1.0), (5, 2.0)], [(5, 3.0), (9, 1.0)]) == 6.0
+def calibration_by_bucket(preds, labels, n=10):
+    sums = [[0, 0, 0] for _ in range(n)]
+    for p, y in zip(preds, labels):
+        b = int(p * n)
+        sums[b][0] += p; sums[b][1] += y; sums[b][2] += 1
+    return [(s[0] / s[2], s[1] / s[2]) for s in sums]
 ```
 
-The dot product costs O(nnz_a + nnz_b). The COO to CSR conversion is a counting sort costing O(nnz + rows), and the matrix-vector product costs O(nnz + rows). Empty rows fall out naturally as zeros. Touch only the nonzero entries, because that is what the interviewer is checking.
+Findings, in order of how much damage they do:
+
+1. Hallucinated API. scikit-learn has no `normalized_entropy`, so the module fails on import. Delete the line, and cross-check against `log_loss` instead.
+2. Wrong baseline. NE divides by the entropy of the base rate from the labels. Using the mean prediction makes a badly calibrated model look better, so a launch gate built on this would pass models it should block.
+3. Wrong recalibration. If negatives were kept at rate w, the correct inverse is p / (p + (1 - p) / w). Multiplying by w is only roughly right for tiny p and is badly off at p = 0.5.
+4. Missing edge cases. `log(0)` when a prediction is exactly 0 or 1, and a divide by zero when every label is the same.
+5. Off-by-one. `int(p * n)` is 10 for p = 1.0, so the code raises IndexError, and empty buckets divide by zero.
+
+Verdict: do not merge. Fixed version:
+
+```python
+import math
+
+EPS = 1e-7
+
+def recalibrate(p, neg_keep_rate):
+    return p / (p + (1.0 - p) / neg_keep_rate)
+
+def normalized_entropy(preds, labels):
+    n = len(labels)
+    if len(preds) != n or n == 0:
+        raise ValueError("preds and labels must be non-empty and the same length")
+    base = sum(labels) / n
+    if base in (0.0, 1.0):
+        raise ValueError("NE undefined when all labels are equal")
+    ll = 0.0
+    for p, y in zip(preds, labels):
+        p = min(max(p, EPS), 1 - EPS)
+        ll -= y * math.log(p) + (1 - y) * math.log(1 - p)
+    h = -(base * math.log(base) + (1 - base) * math.log(1 - base))
+    return (ll / n) / h
+
+def calibration_by_bucket(preds, labels, n_buckets=10):
+    sums = [[0.0, 0.0, 0] for _ in range(n_buckets)]
+    for p, y in zip(preds, labels):
+        b = min(int(p * n_buckets), n_buckets - 1)
+        sums[b][0] += p; sums[b][1] += y; sums[b][2] += 1
+    return [(s[0] / s[2], s[1] / s[2], s[2]) for s in sums if s[2]]
+
+labels = [1, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+assert abs(normalized_entropy([0.2] * 10, labels) - 1.0) < 1e-9
+assert math.isfinite(normalized_entropy([1.0, 0.0] + [0.0] * 8, labels))
+assert calibration_by_bucket([1.0, 0.0], [1, 0])[-1][2] == 1
+assert abs(recalibrate(0.2, 1.0) - 0.2) < 1e-12
+```
+
+Tests that would have caught each defect: a predictor that always outputs the base rate must score NE = 1.0; inputs with p = 0 and p = 1; a recalibration round trip (sample, train-rate, invert, compare to the true rate); and an all-negative slice. An alternative is to drop the hand-rolled code and wrap `sklearn.metrics.log_loss`. I would keep a small pure function here, because the gate runs inside a training job where an extra dependency costs more than 20 lines of tested code.
+
+Why this is likely: candidate reports and Hello Interview say the AI-enabled round grades verification of assistant output, and the listing asks for automated evaluation pipelines.
+
+#### Q3. Extend the maze solver to handle keys and doors, then make it fast on large grids
+
+The repo has `grid.py` (parses a text grid), `solver.py` (plain BFS from `S` to `X` that treats letters as walls) and `test_solver.py`, where 4 of 9 tests fail. Spec: lowercase `a` to `f` are keys, uppercase `A` to `F` are doors that need the matching key, and keys persist once picked up. Return the fewest moves, or -1. Phase 3 runs a 200 x 200 grid with 6 keys under a time limit.
+
+The BFS state has to include the keys you hold, because standing on a cell with key `a` lets you reach places you could not reach from that cell without it. So the state is (row, col, keys bitmask). That is at most 40,000 cells x 64 masks = 2.56M states, which BFS handles in well under a second in Python.
+
+With the assistant, I would ask it to summarize `grid.py` and the test fixtures, then ask for the state change only. I check three things in the diff: the visited set includes the mask, a door test reads the key bit before moving, and picking up a key updates the mask for the new state, not the current one. One wrong output to watch for is an assistant draft that marks a cell visited by (row, col) only. That passes the small tests but returns -1 when the route has to go back through a cell after collecting a key. The fixture `["S.b", "B##", "X.."]` catches it.
+
+```python
+from collections import deque
+
+def shortest_path(grid):
+    rows, cols = len(grid), len(grid[0])
+    start = next((r, c) for r in range(rows) for c in range(cols) if grid[r][c] == "S")
+    seen = {(start[0], start[1], 0)}
+    q = deque([(start[0], start[1], 0, 0)])
+    while q:
+        r, c, keys, d = q.popleft()
+        if grid[r][c] == "X":
+            return d
+        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nr, nc = r + dr, c + dc
+            if not (0 <= nr < rows and 0 <= nc < cols) or grid[nr][nc] == "#":
+                continue
+            ch = grid[nr][nc]
+            if "A" <= ch <= "F" and not keys >> (ord(ch) - ord("A")) & 1:
+                continue
+            nkeys = keys | (1 << (ord(ch) - ord("a"))) if "a" <= ch <= "f" else keys
+            if (nr, nc, nkeys) not in seen:
+                seen.add((nr, nc, nkeys))
+                q.append((nr, nc, nkeys, d + 1))
+    return -1
+
+assert shortest_path(["S.X"]) == 2
+assert shortest_path(["SAX", ".##", "a.."]) == 6
+assert shortest_path(["SAX"]) == -1
+assert shortest_path(["Sa.A.X"]) == 5
+assert shortest_path(["S.b", "B##", "X.."]) == 6
+```
+
+There are two alternatives for the large tier. A* with a Manhattan heuristic cuts the explored states on open grids, but the heuristic ignores doors, so the gain is small when keys force detours. Compressing the grid to its points of interest (start, keys, doors, exit), running one BFS from each to get pairwise distances, then running Dijkstra over (point, mask) wins when the grid is huge and the points are few: 8 BFS runs over 40,000 cells, then a search over 8 x 64 states. I would ship plain state BFS first because it meets the limit and is easy to verify, and mention compression as the next step if the grid grows.
+
+Why this is likely: a maze with keys, doors and portals is one of the AI-enabled round prompts reported in 1point3acres's quarterly Meta trend summary, and candidate reports describe the same failing-tests-then-extend structure.
+
+#### Q4. Read this training log, find why the job diverged, and add a guard that catches it earlier
+
+A ranking model retrain diverged overnight. You get the log and the recent change list.
+
+```text
+step   loss    grad_norm  lr       amp_scale  max|emb|  note
+11800  0.4121  1.03       2.0e-3   65536      3.9
+11900  0.4118  1.10       2.0e-3   65536      4.0
+12000  0.4115  1.07       2.0e-3   65536      4.0       data: new daily shard enters
+12050  0.4140  2.85       2.0e-3   65536      7.8
+12100  0.4392  19.6       2.0e-3   32768      31.0
+12150  0.5810  48.2       2.0e-3   16384      122.5
+12200  nan     inf        2.0e-3   8192       inf
+skipped 412 steps (overflow), restarting from ckpt 12000
+changes since last good run: +feature watch_time (new upstream table),
+  embedding lr 2e-3 -> unchanged, warmup unchanged
+```
+
+The divergence starts at step 12050, well before the NaN at 12200. The grad norm jumps about 2.7x, then 18x, and the embedding max grows 30x. The AMP scale halving only reacts to overflow; it is a symptom. The timing lines up with the new data shard and the new `watch_time` feature. A raw count or duration feature fed in without normalization, or a unit change upstream (seconds to milliseconds is 1000x), produces huge activations in the first layer. That pushes large gradients into the embeddings that interact with it, and in fp16 those overflow.
+
+To confirm, I would compare the feature's distribution on the new shard against the previous day (p50, p99, max), and rerun from checkpoint 12000 with that one feature zeroed. If the run is stable, the cause is confirmed. Fixes, in order of preference: normalize at the feature definition (log1p plus clipping at the training p99.9), which fixes every consumer at once; or add gradient clipping (for example a global norm of 1.0) to this job, which hides the symptom for this model only. I would do both. Clipping is the safety net, but on its own it lets a broken feature train quietly.
+
+The guard I would add, with the assistant writing the first draft and me checking the median window and the ordering of the two checks:
+
+```python
+import math
+from statistics import median
+
+def first_anomaly(steps, window=20, factor=10.0):
+    hist = []
+    for s in steps:
+        if not (math.isfinite(s["loss"]) and math.isfinite(s["grad_norm"])):
+            return s["step"], "non-finite loss or grad"
+        if len(hist) >= 5 and s["grad_norm"] > factor * median(hist[-window:]):
+            return s["step"], "grad norm spike"
+        hist.append(s["grad_norm"])
+    return None, "clean"
+
+log = [{"step": i, "loss": 0.62, "grad_norm": 1.0 + 0.05 * (i % 3)} for i in range(40)]
+assert first_anomaly(log) == (None, "clean")
+log[30]["grad_norm"], log[31]["loss"] = 48.0, float("nan")
+assert first_anomaly(log) == (30, "grad norm spike")
+```
+
+The assistant's first draft compared each step against the mean of all history. One early spike then raised the threshold for the rest of the run, so I switched to a rolling median. On a hit, the trainer stops, saves the batch IDs and alerts the feature owner.
+
+Why this is likely: the listing asks for resolving training stability and data integrity failures, and Meta's guides say debugging and verification are graded in the AI-enabled round; the log format is illustrative.
+
+#### Q5. Find the train-serve skew between these two feature implementations and make it impossible to reintroduce
+
+Offline NE says the new model wins, but online it loses. Feature parity logging shows mismatches on 3 features. Here are the two implementations.
+
+```python
+from datetime import timedelta
+
+# offline/features.py (batch backfill, runs in UTC)
+def offline_features(events, now):
+    recent = [e for e in events if now - e["ts"] <= timedelta(hours=24)]
+    return {
+        "hour_of_day": now.hour,
+        "clicks_24h": sum(e["type"] == "click" for e in recent),
+        "avg_watch_s": (sum(e.get("watch_ms", 0) for e in recent) / len(recent) / 1000) if recent else -1.0,
+    }
+
+# serving/features.py (online, written by another team)
+def online_features(events, now):
+    local = now.astimezone()
+    recent = [e for e in events if now - e["ts"] < timedelta(hours=24)]
+    watch = [e["watch_ms"] for e in recent if "watch_ms" in e]
+    return {
+        "hour_of_day": local.hour,
+        "clicks_24h": sum(e["type"] == "click" for e in recent),
+        "avg_watch_s": (sum(watch) / len(watch) / 1000) if watch else 0.0,
+    }
+```
+
+There are four bugs. `hour_of_day` uses the server's local time online and UTC offline, so the value depends on which data center serves the request. The window is `<=` offline and `<` online, so events exactly 24 hours old count differently. Offline counts events without `watch_ms` as 0 watch time, which drags the average down, while online skips them. And the empty default is -1.0 offline but 0.0 online, a value the model learned to mean "a 0 second watch".
+
+The durable fix is one definition imported by both paths, not two patched copies:
+
+```python
+from datetime import datetime, timedelta, timezone
+
+WINDOW = timedelta(hours=24)
+
+def compute_features(events, now):
+    if now.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+    now = now.astimezone(timezone.utc)
+    recent = [e for e in events if timedelta(0) <= now - e["ts"] < WINDOW]
+    watch = [e["watch_ms"] for e in recent if "watch_ms" in e]
+    return {
+        "hour_of_day": now.hour,
+        "clicks_24h": sum(e["type"] == "click" for e in recent),
+        "avg_watch_s": sum(watch) / len(watch) / 1000 if watch else -1.0,
+    }
+
+now = datetime(2025, 3, 1, 23, 30, tzinfo=timezone.utc)
+ev = [{"ts": now - timedelta(hours=24), "type": "click"},
+      {"ts": now - timedelta(hours=1), "type": "view"},
+      {"ts": now - timedelta(minutes=5), "type": "view", "watch_ms": 4000}]
+assert compute_features(ev, now) == {"hour_of_day": 23, "clicks_24h": 0, "avg_watch_s": 4.0}
+assert compute_features(ev, now.astimezone(timezone(timedelta(hours=-8)))) == compute_features(ev, now)
+```
+
+Alternatives: (a) log features at serving time and train on the logged values. That removes skew by construction but costs storage, and you cannot backfill new features. (b) A shared definition plus a nightly parity job that recomputes a 0.1% sample offline and alerts when the mismatch rate goes above 0.1% per feature. At platform scale I would use (a) for the top ranking models and (b) everywhere else. Logging every feature for every request is too expensive for long-tail models, and (b) catches drift in a day. With the assistant I would ask for the parity test and the boundary fixtures first. Its first version built `now` with `datetime.now()` (naive), which hides the time zone bug, so I made naive timestamps an error.
 
-Expect these follow-ups:
+Why this is likely: the listing names feature consistency and serving correctness among the cross-system failures this role resolves, and a Meta E6 MLE candidate report (Reddit, early 2026) describes ML design follow-ups on offline metric ground truth.
 
-- One vector is far denser than the other. Binary search the larger vector for each index of the smaller one, which costs O(a log b), or store the larger one in a hash map.
-- Handle duplicate COO coordinates. Sum them during conversion.
-- Explain when CSR beats COO. CSR has O(1) row access and better locality for row-parallel work, and it is the natural layout for one GPU warp per row.
-- Connect this to recommendation models. A pooled embedding lookup (EmbeddingBag) is a sparse matrix of IDs times a dense embedding table, which is why the same memory-bound access pattern dominates embedding kernels.
+### Technical screen (no AI, as in Meta's classic screen)
 
-Why this is likely: two 2026 Meta candidate reports describe an AI coding round with sparse matrix times vector and k-nearest-neighbor prompts, and Exponent lists sparse matrix-vector multiplication and a sparse vector data structure among reported ML coding questions.
+#### Q6. Dot product of two sparse vectors, with a follow-up when one vector is much larger
 
-### Ranking and retrieval system design
+Design a `SparseVector` built from a dense list, with `dot(other)`. Most entries are zero. Follow-up: one vector has 100 nonzeros and the other has 10 million. Code is not executed in this screen, so walk through test cases by hand.
 
-#### Q5. Design the ranking system for Facebook or Instagram feed
+Storing a dict from index to value is the first idea, and it is fine for lookups. The interviewer then asks what happens if a hash map is too costly to build, or if both vectors are stored on disk sorted by index. That points to a sorted list of (index, value) pairs. With two sorted lists of similar size, a two-pointer merge costs O(a + b). When one side is tiny, binary searching the big side for each entry costs O(a log b): for a = 100 and b = 10M that is about 2,300 comparisons instead of 10M.
 
-Start with requirements and scale. Assume about 2 billion daily users and about 10 feed loads each, which is roughly 230K requests per second on average and about 500K at peak. Each request returns a few dozen posts chosen from tens of thousands of eligible ones, within a ranking budget of about 100 to 200 ms at p99. The objective is long-term user value, which raw click counts measure poorly.
+```python
+from bisect import bisect_left
 
-Use a funnel, as Meta's Instagram posts describe:
+class SparseVector:
+    def __init__(self, dense):
+        self.pairs = [(i, v) for i, v in enumerate(dense) if v != 0]
 
-1. Sourcing. Combine several candidate sources: connected content, two-tower embedding retrieval with ANN search, recent engagement neighbors, and trending or local pools. Sources can be real-time or precomputed off-peak. Mix them with tunable weights to get a few thousand candidates.
-2. Early-stage ranking. Use a cacheable two-tower model trained to predict whether the late-stage model would put an item in its top K. That makes it a distillation of the heavy model, and it cuts the set to about 500.
-3. Late-stage ranking. A multi-task DLRM or sequence model predicts P(like), P(comment), P(share), expected watch time, and P(hide). A value model combines them, for example `score = sum(w_i * p_i) - w_hide * p_hide`.
-4. Final pass. Apply diversity rules, author and format caps, integrity demotions, and insertion of ads and new-creator content.
+    def dot(self, other):
+        a, b = self.pairs, other.pairs
+        if len(a) > len(b):
+            a, b = b, a
+        if len(b) > 8 * len(a):
+            idx = [i for i, _ in b]
+            total = 0
+            for i, v in a:
+                j = bisect_left(idx, i)
+                if j < len(idx) and idx[j] == i:
+                    total += v * b[j][1]
+            return total
+        i = j = total = 0
+        while i < len(a) and j < len(b):
+            if a[i][0] == b[j][0]:
+                total += a[i][1] * b[j][1]; i += 1; j += 1
+            elif a[i][0] < b[j][0]:
+                i += 1
+            else:
+                j += 1
+        return total
 
-For features, use user and item counters with several time windows, pairwise affinity features, and the user's recent event sequence. Meta has moved ads ranking toward event-based sequence features with attention pooling, which costs O(MN) instead of O(N^2). Training uses logged impressions joined with labels inside a fixed window and retrains every few hours. The Explore post describes continual training on new data every hour.
+assert SparseVector([1, 0, 0, 2, 3]).dot(SparseVector([0, 3, 0, 4, 0])) == 8
+assert SparseVector([0, 0]).dot(SparseVector([5, 5])) == 0
+assert SparseVector([]).dot(SparseVector([])) == 0
+```
 
-The hard parts:
+Building `idx` in the binary search branch costs O(b) per call. In production I would store the index array once in the constructor so repeated dots against the large vector stay O(a log b). The cutoff of 8 is a rough point where a log b drops below a + b for typical sizes; the exact value matters less than having both paths. Hand-traced cases: overlapping indexes, no overlap, empty vectors, negative values, and the size-swap path. To trace the binary search branch by hand, take a = [(3, 2)] and b = [(0, 1), (3, 4), (4, 1), (5, 1), (6, 1), (7, 1), (8, 1), (9, 1), (10, 1)]. Since b has 9 pairs, more than 8 times 1, the code builds idx = [0, 3, 4, ..., 10]. Then bisect_left(idx, 3) returns 1, idx[1] equals 3, and the total is 2 times 4, which is 8.
 
-- Late-stage throughput. 500K requests times 500 items is about 2.5 x 10^8 item scorings per second. Compute the user side once per request and batch the candidates through the model.
-- Position and selection bias. Logged data reflects the old ranker. Add position as a training feature and fix it at serving, and keep a small exploration slice.
-- Multi-objective weights. They encode product judgment. Tune them with online experiments, and keep integrity and hide-rate guardrails.
-- Cold start. New creators and new posts lack counters, so use content embeddings and a boosted exploration quota.
+Why this is likely: the classic no-AI screen is still reported for Meta in recent prep guides and the 1point3acres quarterly summary, and sparse vector dot product is listed among Meta MLE screen questions in the Prepfully MLE guide (vendor source, medium confidence).
 
-Measure NE per task offline. Online, measure sessions, time spent, and meaningful interactions, with guardrails on hides, reports, and latency.
+### ML system design (assistant and Mermaid available in CoderPad)
 
-Why this is likely: Meta's official MLE prep guide names "design a personalized news ranking system", and the LeetCode Discuss thread collecting Meta MLE design questions reports "design a feed like Instagram or Facebook".
+#### Q7. Design Reels ranking end to end, and show where the compute goes
 
-#### Q6. Design ads retrieval that selects candidates from hundreds of millions of ads within a few milliseconds
+Design the system that picks which short videos a user sees next. Cover objectives, the candidate funnel, features, models, evaluation and serving, with capacity numbers.
 
-Requirements: for each ad request, apply advertiser targeting, score the eligible ads, and pass a few thousand to the ranking stage. The pool now runs to hundreds of millions of ads, because generative creative tools multiply variants. Retrieval has to stay within a single-digit-millisecond budget and must handle ads being created, edited, and expiring all day.
+Start with the objective. Watch time alone rewards clickbait and long videos. I would rank on a weighted combination of predicted events: P(watch past 50%), P(like), P(share), P(follow), P(skip within 2s) as a negative, plus integrity downranking. The weights are a product decision, tuned with online experiments against long-term retention as well as session watch time.
 
-A classical design starts with index matching on targeting rules. A two-tower model then computes a user embedding online, and dot-product ANN search runs over ad embeddings that are rebuilt every few hours. It is cheap and cacheable, but the model can only see user-ad interactions through a dot product, so retrieval quality trails ranking quality.
+The funnel exists because compute forces it:
 
-Meta's Andromeda posts describe how to close that gap.
+```python
+users, req_per_user, peak = 500e6, 20, 3.0
+qps = users * req_per_user / 86400 * peak
+gpu_flops = 989e12 * 0.30
+for name, items, flop in [("retrieval", 10_000, 0.002e9), ("early ranker", 10_000, 0.02e9),
+                          ("final ranker", 500, 2e9), ("final ranker on all 10k", 10_000, 2e9)]:
+    print(f"{name}: {qps * items * flop / gpu_flops:,.0f} GPUs")
+```
 
-- The 2024 version moved retrieval onto NVIDIA Grace Hopper with hierarchical indexing and GPU-native operators. That grew model capacity by four orders of magnitude.
-- The 2026 version replaces the single user tower with an ensemble of user expert towers. It encodes ads jointly with serving context and routes each candidate through an MoE attention-based gating network to the top-K relevant experts. Meta reports near ranking-level quality with about 300x fewer inference FLOPs than the 2024 model.
-- At billions of ads per second, the bottleneck becomes memory traffic for intermediate tensors and network traffic between CPU hosts and accelerators. Meta fuses embedding gather, interaction, and scoring into one kernel that keeps intermediates in registers and shared memory, and runs at over 10 billion ads per second on one GH200.
-- Index matching, scoring, and top-K selection share one GPU server, so a request carries only user features and a targeting query. Meta reports that this cuts network traffic about 100x and reaches over 1 billion ads per second per server. INT8 adds up to 2x over FP16 with neutral accuracy.
+That prints about 23, 234, 1,170 and 23,406 GPUs at a peak of about 347k QPS. Running the heavy multitask model on every retrieved candidate needs 23,406 GPUs, about 16x the roughly 1,430 GPUs of the whole cascade. So I would use several retrieval sources (two-tower embedding ANN, follow graph, trending, creator affinity) merged to about 10k candidates; a small early-stage ranker down to about 500; a large multitask final ranker with user history sequence features; then a rules and diversity layer (creator caps, no repeats, integrity filters).
 
-The hard parts to discuss:
+Alternatives for the final model: separate models per event (simple, but features and compute are duplicated), versus one shared-bottom multitask model with per-task heads. A multi-gate mixture of experts beats a plain shared bottom when tasks conflict, such as like versus skip. I'd pick the MMoE because one forward pass serves all heads, which cuts serving cost about 4x against four separate models.
 
-- Moving targeting logic onto the GPU while supporting real-time index updates.
-- Keeping the retrieval objective aligned with ranking, for example by distilling from ranking scores so that retrieval keeps the ads the ranker would value.
-- Fairness to new ads that have no engagement history.
-- Measuring retrieval itself. Use recall of the ranking stage's eventual top ads, and run online tests on conversions.
+Evaluation: offline NE and calibration per head, and recall at k for retrieval. Online: A/B tests on time spent and retention at 7 and 28 days, with guardrails on integrity reports and creator diversity. Cold start: new videos get an exploration slot (a few percent of impressions) and content embeddings from the video encoder until engagement data arrives. In the AI-assisted CoderPad I would draw the funnel in Mermaid myself and use the assistant to check my arithmetic, while I make the architecture choices.
 
-The tradeoff is cacheable dot products, which are cheap but less expressive, against brute-force scoring of every eligible ad with a richer model, which only pays off after kernel fusion and co-location. Meta attributes a 2.4% conversion lift on Facebook to Andromeda since 2025.
+Why this is likely: ML design is the round that sets the level at Meta per prep guides and candidate reports, a senior MLE loop reported ML product design rounds on Meta surfaces, and Meta's engineering blog describes this multi-stage recommendation funnel.
 
-Why this is likely: Meta published the next-generation Andromeda retrieval post in October 2026, and candidate guides list ads ranking and click prediction among the most common Meta ML design prompts.
+#### Q8. Design the training platform for a recommendation foundation model with 20B embedding rows
 
-#### Q7. Design an evaluation framework for ads ranking models
+The ads org wants one large model trained on all surfaces, refreshed daily, with 20B sparse ID rows at dimension 128 and a 50 GFLOP dense tower per example. 20B examples per day. Size the cluster, choose the parallelism, and say what limits MFU.
 
-Requirements: many teams ship changes to CTR, CVR, and quality models every week. The framework has to catch regressions before launch and predict online advertiser value. It also has to respect the auction, where prediction errors change prices as well as rankings.
+Memory comes first, because the embeddings dominate:
 
-Offline evaluation:
+```python
+rows, dim = 20e9, 128
+for name, b in {"fp32 + Adam": 12, "fp16 rows + rowwise Adagrad": 2}.items():
+    tb = rows * dim * b / 1e12
+    print(f"{name}: {tb:.1f} TB, {tb * 1e12 / 60e9:.0f} GPUs at 60 GB usable")
+need = 20e9 * 50e9 * 3 / 86400
+for mfu in (0.2, 0.4):
+    print(f"MFU {mfu:.0%}: {need / (989e12 * mfu):.0f} GPUs")
+```
 
-- Train on data up to day T and evaluate on day T+1. Random splits leak future information.
-- Use normalized entropy as the primary metric. NE is log loss divided by the entropy of the background rate. Report it per task and per major slice, such as surface, country, ad objective, and new or established advertiser.
-- Report calibration, the sum of predictions over the sum of labels, overall and by prediction bucket. AUC can appear as a secondary number. It ignores scale, so launch decisions rest on NE and calibration. The 2014 Facebook ads paper chose NE and calibration over AUC for exactly this reason.
-- Check freshness by measuring how NE decays when the model is evaluated one, two, and three days after its training cutoff. That decay tells you the retraining cadence.
+That gives 30.7 TB (512 GPUs) versus 5.1 TB (85 GPUs) for the tables, and 176 versus 88 GPUs for the dense compute. So the choice of optimizer and precision for the tables is worth about 6x in hardware, and the gap between 20% and 40% MFU doubles the dense cost.
 
-Auction-aware checks:
+Parallelism. Embedding tables use model parallelism, with a planner choosing per table: table-wise for small tables, row-wise for huge ones, column-wise for very wide ones. Lookups use all-to-all. Dense layers use data parallelism, and FSDP once the dense tower no longer fits. The alternatives are keeping tables in host memory with a GPU cache (cheaper, but the cache miss rate sets throughput) or hashing IDs into fewer rows (cheaper, but collisions cost quality for tail IDs). I would shard across HBM for the hot tables and put the long tail in a host-memory cache tier, because ID frequency is heavily skewed.
 
-- Expected value is roughly bid x pCTR x pCVR plus quality terms. Replay logged auctions with the new predictions to estimate changes in winners, prices, and spend.
-- A calibration shift of 5% can move spend more than a small NE gain, so require both to pass before launch.
+What limits MFU here: the all-to-all embedding exchange (overlap it with the dense compute of the previous batch), the data loader (preprocessing on separate CPU hosts so GPUs never wait), and stragglers at thousands of GPUs. I'd measure step time broken down into compute, exposed communication and input wait before tuning anything. Reliability: checkpoint every 30 to 60 minutes with async sharded writes, and expect daily hardware failures at this scale, so restart must be automatic and take minutes.
 
-Online evaluation:
+Why this is likely: the listing names distributed training, training efficiency and hardware utilization, and Meta's engineering blog describes training its ads recommendation foundation model at LLM scale; numbers here are illustrative.
 
-- Advertiser budgets couple the treatment and control groups, because a better model in one arm can drain budgets the other arm would have spent. Use budget-split experiments or advertiser-side randomization for large changes, and user-side splits for small ones.
-- Primary metrics are advertiser value (conversions, cost per result, ROAS) and revenue. Guardrails are ad hides and reports, organic engagement, and latency.
-- Long-running holdouts capture effects that two-week tests miss.
+#### Q9. Design an LLM assistant that lets advertisers create and edit campaigns by chat (AI-enabled system design)
 
-Platform pieces:
+The assistant reads the advertiser's account, proposes campaigns, and can call tools: `get_performance`, `create_campaign`, `update_budget`, `generate_ad_text`. Design it, including guardrails and how you'd know it works.
 
-- Frozen benchmark datasets with versions.
-- Shared metric definitions.
-- Automatic slice reports with confidence intervals.
-- A ledger that links each offline result to its later online result, so you can measure how well offline NE predicts online gains and retire gates that do not.
-- A model registry with prediction-stability SLOs, as Instagram describes in its post about scaling to 1000 models.
+Architecture: a planner LLM with a fixed tool schema; a retrieval layer over the advertiser's own account data and the ads policy docs; a tool executor that enforces permissions; and a confirmation step for every write. Reads run automatically. Writes (create, budget change) produce a diff that the advertiser approves. That one rule removes most of the risk of money-moving mistakes.
 
-The tradeoff is launch speed against rigor. Tier the gates by risk, so that weight tweaks run fast and new architectures face the full suite.
+Alternatives for the core loop: (a) a single agent with all tools, simple but harder to constrain; (b) a router that classifies intent and hands off to small task-specific flows with fewer tools each. I would pick (b) for writes and (a) for open-ended performance questions. Fewer tools per step raises tool-choice accuracy, and a fixed flow is easier to audit.
 
-Why this is likely: Meta's official MLE prep guide lists "design an evaluation framework for ads ranking", and NE and calibration come from Meta's own ads paper.
+Guardrails. Prompt injection arrives through ad text or landing-page content that the assistant reads. The executor wraps tool outputs as quoted data with a clear boundary, and a write tool only accepts arguments that come from the user's turn or the confirmed plan. Policy: generated ad text goes through the same ads integrity classifiers as human-written ads before it is shown. Limits: a budget change above a set multiple of the current daily budget always needs explicit confirmation.
 
-### ML platform design
+Latency and cost: a planner call of about 1.5k input and 200 output tokens per turn, about 3 turns per task, plus retrieval. That keeps a typical task under 5 seconds with a mid-size model; the largest model is reserved for the plan step.
 
-#### Q8. Design a feature platform for thousands of ranking models, including user event sequences
+Evaluation: an offline set of a few hundred real task transcripts with expected tool calls, scored on task success, tool-argument exactness and policy violations, plus an LLM judge for the quality of explanations, calibrated against human labels until agreement is above about 85%. Online: task completion rate, the share of proposed changes the user edits or rejects, and the performance of campaigns created with the assistant versus without.
 
-Requirements: about ten thousand features and thousands of models. Online reads need a p99 under about 10 ms per request across hundreds of features. Training data must be correct as of each impression's timestamp, and a new feature should go from idea to experiment in days.
+Why this is likely: candidate and vendor reports describe a newer AI-enabled system design round with RAG and agent-with-guardrails prompts, and Meta's FAQ says the AI assistant is available in design interviews (vendor-sourced for this track, lower confidence).
 
-Components:
+### ML depth
 
-1. A definition registry. Each feature has one owner and one definition written in a DSL or a restricted Python subset. The definition compiles to both a streaming job and a batch backfill job. It also records the default value, its version, and its privacy purpose.
-2. Streaming aggregation. Counters over 1 hour, 1 day, 7 days, and 28 days, plus last-N event lists, are computed from event logs with event-time windows and watermarks. Results land in an online key-value store sharded by entity ID.
-3. A sequence store. Following Meta's event-based feature design, store per-user event streams with an event type, entity IDs, attributes, and a timestamp. Truncate each stream to a length set by its importance. A user with 2,000 events at about 64 bytes each is about 128 KB, so cap the length and push attribute embeddings into the model rather than the store.
-4. Serving-time logging. The ranker logs the exact feature values it used. An online joiner attaches labels later. Training tables store features as maps so that features can be added without schema changes, which matches Meta's data ingestion post.
-5. Point-in-time backfill for new features. Join the event log as of each impression timestamp, using the value that existed at that moment instead of the latest one.
+#### Q10. Design the automated evaluation pipeline that decides whether a retrained ranking model can ship
 
-The hard parts:
+Thirty teams retrain models daily. Today each team checks launches by hand in notebooks. Design a shared evaluation and launch gate.
 
-- Skew between the streaming and batch paths. Generating both from one definition removes most of it. Logging at serving time covers the rest for features that already exist.
-- Cost. Logging thousands of features for every impression is expensive. Sample negatives, and drop features with low importance scores on a schedule. Meta's sequence learning post makes the same argument about redundant aggregations.
-- Freshness against cost. Assign freshness tiers per feature, so that only the counters that need second-level updates pay for them.
-- Deletion. Expire user data on deletion requests in both the store and the training tables, and track lineage so that you know which models consumed it.
+Stages, cheapest first, so a bad model fails fast:
 
-Tradeoffs: logging at serving time gives exact parity but slows feature iteration, because a new feature has no history until you backfill it. Backfill gives history but risks leakage. Most mature platforms use both, and add a parity check that compares backfilled values with logged values on overlapping days.
+1. Data checks on the eval set: label rate, feature null rates and distribution drift against the last 7 days. A broken eval set must fail the whole run.
+2. Offline quality: NE and calibration per head, overall and on fixed slices (new users, new content, each country tier, each device). Compare against the production model on the same day's held-out data, with confidence intervals from bootstrap over users, not over impressions, because impressions from one user are correlated.
+3. Behavior checks: score distribution shift, the share of top-k items that changed, and a replay of a small fixed set of sensitive cases (integrity, minors' content) that must score at least as well as production.
+4. Online: an automatic small-percentage A/B with pre-registered success and guardrail metrics. The ramp only continues if guardrails hold.
 
-Why this is likely: the listing names feature engineering platforms and feature consistency, and Meta has published its event-based feature and data ingestion designs.
+The gate rule: ship if NE improves by at least a set threshold (for example 0.05% relative, roughly the size that tends to show up online for a mature model), no slice regresses by more than its own threshold, and calibration on every head stays within 0.95 to 1.05.
 
-#### Q9. Design the training data and training pipeline for a recommendation model that retrains every few hours
+Alternatives: (a) one global threshold, which is simple but lets a model trade a large regression on a small slice for an average gain; (b) per-slice thresholds learned from history (how much offline movement predicted online movement). I would start with (a) plus hard slice floors and move to (b) once there are a few hundred launches to fit on.
 
-Requirements: train on petabytes of logged impressions. Warm-start from the previous checkpoint every few hours, validate automatically, and publish to serving. The pipeline has to stop failures in data, hardware, or code before they reach production.
+Where AI tools help: the pipeline writes a launch summary, and an LLM drafts the explanation of which slices moved and why. The threshold rule makes the ship decision, and the draft only explains it. I check it by having the summary cite the metric table rows it is based on, and the review fails if a cited number does not match. Measuring the gate: track how often offline pass and online fail disagree. If more than about 20% of offline passes lose online, the offline metrics or slices are wrong and need fixing first.
 
-Data path:
+Why this is likely: the listing asks for AI-native workflows that automate evaluation pipelines, and a Meta E6 MLE candidate report (Reddit, early 2026) describes ML design deep dives on offline metric ground truth.
 
-1. An online joiner matches impressions with clicks and conversions inside a label window. The 2014 Facebook ads paper describes this tradeoff. A short window mislabels late clicks as negatives, and a long window delays training and uses more memory. Delayed conversions need either a longer window or a model of the delayed feedback.
-2. Negative downsampling at a rate w cuts volume. Record w so that predictions can be recalibrated later.
-3. Store the data in partitioned warehouse tables. Meta uses Hive tables in a DWRF columnar format on the Tectonic file system.
-4. A disaggregated preprocessing tier reads, decodes, and transforms data, including normalization, bucketization, truncation, and feature crosses. It scales independently of the GPUs. Meta's DPP checkpoints data cursors and replaces failed reader nodes without stopping the job. Size the reader tier so the GPUs always have input ready. Meta reports recommendation jobs using tens to hundreds of reader nodes.
+#### Q11. Your click model is trained on downsampled negatives and delayed conversions. Estimate the calibration error and fix it
 
-Training path:
+Negatives are kept at 5%, and the true CTR is 1%. Conversions can arrive up to 7 days after the click, but training uses labels joined 1 hour after the impression, and about 30% of conversions arrive later than that.
 
-1. Each job warm-starts from the last good checkpoint and trains on the new partitions. Sparse and dense state are checkpointed separately, because the embedding state is much larger.
-2. Before publishing, compare the candidate with the current model on the same holdout, using NE, calibration, and per-slice deltas. Also check prediction distribution drift on a fixed probe set, and check weight and gradient norms.
-3. Publish through a model registry that records data range, code version, and parent checkpoint, so that every model can be reproduced and rolled back.
+```python
+def recalibrate(p, w):
+    return p / (p + (1 - p) / w)
 
-Reliability:
+true_ctr, w = 0.01, 0.05
+p_train = true_ctr / (true_ctr + (1 - true_ctr) * w)
+print(f"{p_train:.3f} -> {recalibrate(p_train, w):.4f}")
+assert abs(recalibrate(p_train, w) - true_ctr) < 1e-12
+```
 
-- Meta reports that over 66% of training interruptions on Llama 3 came from hardware faults.
-- Silent data corruption is the subtle case. It produces wrong gradients that stay inside numeric bounds, so training looks healthy while it diverges. Meta estimates it at about one fault per thousand devices.
-- Defenses include periodic fleet tests, comparing replicas in data-parallel training, and reductive triage, which bisects on smaller clusters to isolate a NaN source.
+On the sampled data the model learns a rate of about 16.8%, not 1%. That is a 17x overestimate, which would wreck an auction that multiplies the prediction by the bid. The inverse transform p / (p + (1 - p) / w) recovers 1%. It must run in serving before the auction, and the eval module must apply the same transform, or offline calibration will look broken while online is fine (or the other way round).
 
-The hard parts:
+Delayed labels are the harder one. With a 1 hour cutoff, 30% of positives are labeled negative at training time, so the conversion model underpredicts by about 30% (calibration of 0.70). Options:
 
-- Warm-starting can lock in a bad update, so keep several older checkpoints and run a slow-path full retrain now and then.
-- Schema changes upstream can silently zero a feature. Alert on feature coverage as well as job success.
+1. Wait for the full window before training. Correct, but the model is 7 days stale, which costs more than the bias in fast-changing ads.
+2. Train on fast labels and correct with a delay model: estimate P(conversion arrives after the cutoff | features) and reweight, or use a fake-negative correction that re-adds the positive when it arrives.
+3. Train on fast labels, then fit a per-segment calibration layer daily on matured data (7+ days old).
 
-Why this is likely: the listing asks for training pipelines, training stability, and data integrity, and Meta has published its data ingestion pipeline and its hardware reliability practices.
+I would combine 2 for the model and 3 as a safety layer, because the calibration layer is cheap, easy to audit, and catches drift in the delay distribution itself. To check: calibration by bucket on matured data, split by advertiser vertical, since delay patterns differ a lot (app installs convert fast, high-value purchases slowly).
 
-### Distributed training depth
+Why this is likely: the listing asks for resolving failures in model quality and data integrity, and a Meta E6 MLE candidate report (Reddit, early 2026) describes an ML design deep dive on offline metric ground truth; the recalibration formula is the standard one from Meta's 2014 ads CTR paper (background knowledge, not an interview report).
 
-#### Q10. How do you shard trillion-parameter embedding tables, and what limits scaling to thousands of GPUs?
+#### Q12. An upstream logging change silently broke a feature used by 300 models. Design the safeguard so it is caught within an hour
 
-The basic scheme is DLRM's hybrid parallelism. Embedding tables are model parallel and the dense MLPs are data parallel. In the forward pass, an all-to-all sends each sample's IDs to the GPUs that own the rows and returns pooled embeddings. The backward pass reverses that exchange for gradients.
+Last quarter a client release changed how dwell time is logged. The feature's mean dropped 40% and 300 models trained on it for 9 days before anyone noticed.
 
-A table with 1 billion rows at dimension 256 in FP16 is 512 GB before optimizer state, more than any single device can hold.
+The root problem is that no one owns the contract between the logger and the feature consumers. I would build three layers.
 
-TorchRec's sharding options:
+Layer 1, contracts at the source. Every logged field used as a feature gets a schema with type, unit and expected range, and client releases run a contract test in CI against a fixed event replay. This catches unit changes before they ship, at near-zero cost.
 
-- Table-wise puts a whole table on one GPU. It is simple, but large tables cause imbalance.
-- Row-wise splits rows across GPUs. It balances memory, but pooled partial sums need a reduce-scatter.
-- Column-wise splits the embedding dimension. The results are concatenated, and it balances compute for wide tables.
-- Table-row-wise keeps the row split inside a node to use NVLink.
-- Grid sharding splits both rows and columns, for the largest tables.
-- Data parallel replicates small tables, where an all-reduce is cheaper than lookups over the network.
+Layer 2, distribution monitoring on the feature store. For each feature, hourly statistics: null rate, mean, p50, p99, and the share of zeros. Compare against the same hour last week so daily cycles cancel out, and alert when the population stability index rises above about 0.2 or the null rate moves by more than a few points. With 50k features and hourly checks, that is 1.2M comparisons a day, cheap enough as a streaming job. The alternative of retraining canaries (train a small model hourly and watch its NE) catches problems that matter to models but is slower and costs GPU time, so I'd keep it only for the top 20 features by usage.
 
-The planner enumerates options per table. It estimates storage and step time from pooling factors, embedding dimension, ID distribution, and topology, then partitions to minimize the slowest rank. Hot IDs matter too. A power-law ID distribution makes some row shards much busier, so the planner needs access statistics as well as sizes. Caching hot rows in HBM, with the rest in host memory through UVM, extends capacity when tables outgrow HBM.
+Layer 3, blast-radius control. Lineage from feature to every model that consumes it, so an alert lists the affected models. Training jobs refuse to start when an input feature is in alert. Serving falls back to the last good feature version for an hour, until the owner acknowledges.
 
-Meta's PyTorch post on 2D sparse parallelism names three problems at thousands of GPUs:
+Alert fatigue is the failure mode. With 50k features, a 1% false alarm rate is 500 alerts a day, and people will mute them. So alerts page only for features used by more than some number of models, or by any top-revenue model. Everything else goes to a daily digest. I would validate thresholds by replaying the last year of known incidents. The goal is to catch all of them within an hour with fewer than 10 pages a week.
 
-1. Imbalance and stragglers.
-2. All-to-all bandwidth that drops across nodes.
-3. Input feature memory that grows with GPU count.
+Why this is likely: the listing asks for safeguards for reliability and integrity risks and for resolving data integrity failures across systems; no candidate report found names this prompt, so this is inferred from the listing (lower confidence).
 
-The fix is to divide ranks into sharding groups. Inside each group, tables are model parallel. Across groups, the same shards are replicated and synchronized with an all-reduce. Smaller groups mean cheaper all-to-all, and the replicas sit inside one host to use intra-node bandwidth. In one production example, Meta ran 1024 GPUs with sharding groups of 256.
+#### Q13. You have a 2x larger ranking model that wins offline. Serve it without doubling latency or cost
 
-Optimizer state needs separate handling. FBGEMM fuses the optimizer into the embedding backward pass, so embedding gradients are never materialized. With no gradients to all-reduce, 2D parallelism synchronizes the weights. Meta synchronizes optimizer state on a delayed schedule, and syncing every N steps behaves like local SGD.
+Current final ranker: 18 ms p50, 1,000 GPUs. The new model has twice the FLOPs. Product will not accept more than about 20 ms or more than about 1,100 GPUs.
 
-The failure modes to name:
+```python
+base_ms, base_gpus = 18.0, 1000
+for name, f in {"2x, nothing": 2.0, "2x + FP8": 2.0 / 1.6,
+                "2x + cached user tower": 2.0 * (1 - 0.6 * 0.8), "distilled student": 1.0}.items():
+    print(f"{name}: {base_ms * f:.1f} ms, {base_gpus * f:,.0f} GPUs")
+```
 
-- One hot table pinned to one rank, which sets the step time.
-- Row-wise sharding with poor ID hashing.
-- Treating the delayed sync as free, when it can shift convergence and needs a quality check.
+That prints 36 ms and 2,000 GPUs; 22.5 ms and 1,250; 18.7 ms and 1,040; and 18 ms and 1,000. The options:
 
-Why this is likely: the listing names training efficiency and data loading, and Meta's TorchRec and 2D sparse parallelism work is the public description of how its recommendation training scales.
+1. Lower precision (FP8 or INT8). About 1.6x faster on the matrix-heavy parts, but on its own it misses both budgets. It needs a calibration check, because quantization can shift the scores.
+2. Cache the user tower. The user side of the model does not depend on the candidate, so I cache its output per user across requests for a few minutes. If 60% of FLOPs are user-side and 80% of requests find a fresh cached user embedding, the cost lands at 18.7 ms and 1,040 GPUs. This changes the model's structure (user and item interactions must happen after the cached part), so it needs a retrain and loses a little accuracy.
+3. Distillation. Train a 1x student on the 2x teacher's outputs. It costs nothing extra in serving, but students usually keep only part of the teacher's gain.
+4. Cut the candidate count from 500 to 300 by improving the early ranker. That saves 40% of final-ranker compute, but it risks recall.
 
-#### Q11. Compare FSDP, tensor parallelism, and pipeline parallelism. How would you combine them for a large model?
+My choice: caching plus FP8, because together they fit both budgets with room to spare and keep most of the teacher's gain. I'd run distillation in parallel as a fallback. Verification: an A/B of the cached FP8 model against the uncached FP32 2x model on a small slice, so the quality loss from the serving tricks is measured by itself, separately from the model gain.
 
-Start with memory. Mixed-precision Adam keeps about 16 bytes per parameter: FP16 or BF16 weights and gradients, plus FP32 master weights and two moment buffers. A 405B model therefore needs about 6.5 TB before activations, so plain data parallel replication is impossible.
+Why this is likely: the listing names serving latency, inference infrastructure and hardware utilization as the problems this role drives, so this prompt is inferred from the listing (lower confidence); numbers are illustrative.
 
-FSDP (ZeRO stage 3) shards parameters, gradients, and optimizer state across the data-parallel group. That divides those 16 bytes per parameter by N. Each layer is all-gathered just in time for the forward and the backward pass, and gradients are reduce-scattered. Per step that moves about 1.5 times the traffic of DDP, but it overlaps with compute when prefetch is set up well. FSDP stops scaling when the per-GPU batch gets small, because communication then outweighs compute. Hybrid sharding (HSDP) shards inside a node and replicates across nodes to keep the large all-gathers on NVLink.
+### Cross-functional and behavioral
 
-Tensor parallelism splits weight matrices. In a transformer MLP, the first matmul is split by columns and the second by rows, so each block needs one all-reduce in the forward pass and one in the backward pass. That traffic is on the critical path, so TP stays inside a node.
+#### Q14. Four orgs each run their own ranking stack. Make the case for, or against, one shared framework
 
-Pipeline parallelism splits layers into stages and feeds microbatches through them. With p stages and m microbatches, the idle bubble fraction for GPipe or 1F1B is (p - 1) / (m + p - 1). Interleaved schedules with v virtual stages per rank shrink it by about a factor of v, and zero-bubble schedules split weight-gradient work to fill the gaps. 1F1B also caps in-flight activations at about p microbatches on the first stage, so the first stage has the highest memory use.
+You are asked to write the strategy. Ads, Feed, Reels and Marketplace each have their own training and serving stacks. The proposal is a shared modeling and training framework over the next two years. Decide, and say how you would get alignment.
 
-Llama 3 405B combined all of them as 4D parallelism, ordered [TP, CP, PP, DP] from the highest to the lowest bandwidth need. TP ran on NVLink inside the server, context parallelism split long sequences, PP spanned nodes, and FSDP was the outermost dimension. Meta removed one layer each from the first and last pipeline stages, giving 126 layers instead of 128, to balance memory and compute.
+I would start by measuring what duplication costs today: how many engineers maintain parallel versions of the same thing (data loaders, embedding sharding, eval tooling), how long a modeling idea takes to move from one org to another, and how many incidents came from divergent implementations. Suppose 4 stacks each spend about 15 engineers on infrastructure that is mostly the same, and moving a proven idea across orgs takes about 2 quarters.
 
-Recommendation models use a different mix. Meta's GEM training uses 2D FSDP plus expert parallelism for the dense side and fully sharded 2D model parallelism for the sparse side, mapped onto the network hierarchy. It also uses SM-free collectives, so communication leaves the SMs free for compute.
+Options:
 
-Pick the layout from three things: the memory each GPU must hold, which collectives sit on the critical path, and which link each collective uses. Then confirm the choice with a trace.
+1. Full unification: one framework, everyone migrates. This brings the largest long-term savings, but migration of every production model is risky, and the org with the strictest latency needs (often Ads) will block it.
+2. Shared core, owned surfaces: unify the layers that are truly the same (data loading, embedding sharding, distributed training, evaluation and launch gating), and leave model architectures and serving tuned per org.
+3. Standards only: shared interfaces and an eval spec, separate code.
 
-Why this is likely: the listing asks for distributed training and foundation model training across clusters, and Meta has published the Llama 3 parallelism design and the GEM training recipe.
+I would recommend 2. It captures most of the savings, because infrastructure duplication is where most of the cost sits, while each org keeps control over the part that sets its business metrics. Option 3 tends to drift back to four stacks within a year.
 
-#### Q12. Define MFU. Why might a large recommendation model sit near 20% MFU, and how do you find what to fix?
+Getting alignment: name one pilot in the org with the most pain and the least latency risk, and agree on success criteria up front (training throughput at least equal, migration under a quarter for a typical model, no regression in NE). Each org's tech lead co-owns a part of the core so it is not "the platform team's project". Write the decision doc with the alternatives and the reasons the other two lost, so the debate does not restart every quarter. Review progress against the criteria, and stop if the pilot misses them.
 
-Model FLOPs utilization is the useful model FLOPs completed per second, divided by the hardware's peak FLOPs per second at the precision you use. Recomputation does not count. Counting it gives hardware FLOPs utilization, which flatters a run that recomputes activations. For dense transformers, training costs about 6 FLOPs per parameter per token: 2 in the forward pass and 4 in the backward pass, plus the attention terms. So MFU is about 6 x N x tokens per second, divided by peak.
+Why this is likely: senior loops include a cross-functional or project retrospective round per candidate reports and prep guides, and the listing asks for multi-year ML strategy across research, infrastructure and product teams.
 
-For recommendation models, count only the dense compute. Embedding lookups are memory-bandwidth bound and contribute almost no FLOPs, so MFU understates how hard the hardware is working, and you should report bandwidth use for the embedding kernels alongside it.
+#### Q15. Tell me about a time AI tools changed how fast your team shipped ML work, and how you made sure the output was correct
 
-Meta's GEM post gives the framework: end-to-end MFU = local MFU x scaling ratio. Local MFU comes from running each layer alone on one GPU, with no recomputation and no exposed communication. The scaling ratio is end-to-end MFU divided by local MFU. Step latency is the maximum over ranks of max(compute time, communication time), so the slowest rank sets the pace. Near-linear scaling needs four things: compute much larger than communication, communication hidden under compute, little recomputation, and balanced ranks.
+A strong answer picks one concrete workflow, gives before-and-after numbers, and spends most of its time on verification.
 
-Why recommendation models score low:
+Example structure. Situation: model launch reviews took about 3 days each, because an engineer hand-assembled metric tables and wrote the analysis. Task: cut that time without lowering the bar, since a bad launch costs far more than a slow one. Action: I built a pipeline where an LLM drafts the launch report from the eval tables, and an agent pulls slice metrics on request. I set three rules. Every number in the draft must cite a table cell, and a checker fails the report if any cited value does not match. The ship decision stays with the same threshold rule as before. And for the first month, a human writes the report in parallel and we compare.
 
-- Jagged inputs. User histories vary from hundreds to tens of thousands of events, and padding to the maximum wastes up to half the compute. Meta built jagged flash attention to work on unpadded tensors.
-- Asymmetric attention shapes. Long queries with short keys, and the reverse, break the tiling assumptions behind FlashAttention. Meta saw a 2.6x gap between production and synthetic benchmarks.
-- Memory-bound pieces. Small embedding dimensions and frequent normalizations keep tensor cores idle.
-- Precision sensitivity. CTR and CVR objectives regress under naive FP8, so low precision needs block scaling and validation against NE.
+In week two the draft said a slice "improved 2%", but the number was for a different slice with a similar name. The citation checker caught it, and I changed the prompt to include the slice ID next to the name. We also found the LLM described every regression as "within noise". So I added the bootstrap interval to the input and required the draft to quote it.
 
-Meta reports doubling GEM to 20 to 25% MFU while growing training FLOPs 4x in a year. The levers were custom kernels, MXFP8 attention and MLP (over 1.3x faster forward and 1.5x faster backward), and topology-aware parallelism.
+Result: review time went from about 3 days to under 1, with the same number of rollbacks over the next two quarters. Two other teams adopted it. Next time I would build the citation checker first, before the drafting step.
 
-How to find the fix:
+Interviewers in this round tend to ask follow-ups: how you choose what not to automate, how you keep your own skills sharp, and what you do when the AI is confidently wrong. Have a real answer for each, and describe only AI-written code you reviewed yourself.
 
-1. Profile one step and split the time into compute, exposed communication, data loading stalls, and idle time.
-2. If local MFU is low, work on kernels, fusion, padding, and precision.
-3. If the scaling ratio is low, work on overlap, load balance across embedding shards, collective placement, and input prefetch.
-4. Rerun quality checks after every change, because a speedup only counts if NE holds.
-
-Why this is likely: the listing asks for performance work across training, data loading, and hardware utilization, and Meta's GEM training post defines this exact decomposition.
-
-### Model quality and data integrity
-
-#### Q13. Explain normalized entropy and calibration for click prediction. How do negative downsampling and delayed labels break calibration, and how do you fix it?
-
-Normalized entropy is the average log loss divided by the entropy of a constant predictor that always outputs the background rate p̄:
-
-NE = [ -(1/N) Σ ( y log p + (1 - y) log(1 - p) ) ] / [ -( p̄ log p̄ + (1 - p̄) log(1 - p̄) ) ]
-
-Lower is better, and 1.0 means no better than the base rate. The normalization matters because raw log loss falls as the base rate approaches 0, so without it a seasonal drop in CTR would look like a model gain. For example, at a 2% base rate the constant predictor's loss is about 0.098 nats, so a model at 0.090 has NE of about 0.92.
-
-Calibration is the sum of predicted probabilities divided by the number of observed positives, and the target is 1.0. Check it overall, per prediction bucket with a reliability curve, and per slice. AUC cannot see calibration, because any monotone rescaling of the scores leaves AUC unchanged. In an auction, expected value is about bid x pCTR x pCVR, so a 10% overprediction for one advertiser segment wins impressions it would otherwise lose and moves prices. Meta's ads work reports NE and calibration for this reason.
-
-Negative downsampling keeps a fraction w of the negatives. The model then predicts the odds inflated by a factor of 1/w, and the exact correction is:
-
-q = p / (p + (1 - p) / w)
-
-In logit space, that is the raw logit plus ln(w). Apply the correction before the auction, and record w with the model, because a wrong w produces a systematic bias that looks like drift.
-
-Other ways calibration breaks:
-
-- Delayed conversions. Recent impressions look negative because their conversions have not arrived, so a model trained on fresh data underpredicts CVR. Fix it with a longer label window, an explicit delayed-feedback model, or importance weights for label maturity.
-- Distribution shift. New surfaces, new advertisers, and holiday traffic all move the base rate.
-- Selection bias. The model trains only on impressions the previous model won.
-- Model changes. Ensembling, distillation, and multi-task heads can each shift calibration.
-
-Fixes:
-
-- A post-hoc calibration layer, such as isotonic regression or Platt scaling per segment, refit on recent data.
-- A calibration term in the loss.
-- Monitoring calibration per segment on fresh traffic, with alerts on a band such as 0.95 to 1.05.
-
-Isotonic regression can overfit small slices, so pool sparse segments.
-
-Why this is likely: NE and calibration come from Meta's 2014 ads click prediction paper and still appear in Meta's engineering posts, and prep sites list "design an ads ranking system with calibration" among Meta questions.
-
-#### Q14. What causes train-serve skew in ranking systems, and how do you detect and prevent it at platform scale?
-
-Train-serve skew is any difference between the inputs or computation a model saw in training and what it sees at serving. It raises no errors, and the only symptom is worse predictions. Name the specific mechanisms:
-
-1. Two code paths. Batch SQL and online C++ compute the "same" feature differently, for example with different bucket boundaries, hash seeds, text normalization, or time zones.
-2. Time leakage. A backfilled feature uses data from after the impression, such as a counter that includes the click being predicted. Offline NE improves and online results do not.
-3. Freshness gaps. Training sees counters updated each second, while serving reads a cache refreshed hourly, or the reverse.
-4. Defaults and failures. At serving, a feature lookup times out and returns 0. The model learned that 0 means "no engagement", so it demotes healthy items without any error, and this gets worse under load.
-5. Version mismatch. A model trained on version 3 of a feature reads version 4 after a platform migration.
-6. Population differences. Training data is downsampled or filtered differently from serving traffic, or it excludes surfaces the model now serves.
-
-Detection:
-
-- Log the features used at serving for a sample of requests. Every day, recompute them through the offline path and report a parity rate per feature, the fraction within tolerance.
-- Replay logged features through the offline model and compare scores with the logged predictions. Any gap means the model or its preprocessing differs.
-- Monitor per-feature coverage and default rates online. A jump in defaults is often the first sign of a broken upstream source.
-- Track a prediction stability metric per model, as Instagram did in its post about scaling to 1000 models, and alert on calibration drift by slice.
-
-Prevention:
-
-- Compile one feature definition into both paths.
-- Train on logged features when you can.
-- Use point-in-time joins for backfills.
-- Pin feature versions in the model artifact, and refuse to serve if they differ.
-- Make "missing" an explicit value distinct from zero.
-- Shadow every new model on live traffic before canary, and compare its live predictions with offline predictions for the same requests.
-
-Platform owners also have to drive adoption. Block launches whose features fail parity, and publish the parity dashboard so that teams see their own numbers.
-
-Why this is likely: the listing names feature consistency and serving correctness among the cross-system failures this role resolves, and candidate guides list offline-online gaps as a standard Meta ML follow-up.
-
-### Behavioral
-
-#### Q15. Tell me about a time you set technical direction across several teams that disagreed. How did you decide, and what happened?
-
-At this level the interviewer is checking for scope, judgment, and influence without authority. Meta's guide scores five signals: resolving conflict, embracing ambiguity, driving results, communicating effectively, and growing continuously. Pick one story that touches most of them. Good candidates are a platform migration, a shared modeling standard, or a training infrastructure bet that affected several organizations.
-
-Structure:
-
-1. Context in two sentences. Cover the systems involved, the number of teams, and why it mattered in numbers, such as training cost, launch velocity, or an incident rate.
-2. The disagreement. State each side's position fairly, including the reasonable case against yours. Interviewers notice how you describe people who disagreed with you.
-3. How you decided. Describe the evidence you gathered, such as a benchmark, a prototype, or a cost model. Then describe the written proposal with alternatives and risks, and who reviewed it. Name one point where the critics were right and you changed the plan.
-4. How you drove it. Cover milestones, migration support for the teams that bore the cost, an intermediate win that kept the effort funded, and how you handled a team that resisted the change.
-5. Results with numbers. For example: step time down 30%, launch time from weeks to days, or a class of incidents removed. Also say plainly which parts missed.
-6. What you would do differently.
-
-Several 2026 reports say Meta also asks how you use AI tools to drive impact and how you check their output. If your story includes using LLM tooling, such as automated triage of failed jobs or generated experiment reports, describe how you measured its error rate and where a person still made the call.
-
-Expect follow-ups on the hardest conversation, on a decision you reversed, and on how you knew the direction was right beyond the fact that people accepted it. Keep the story to about four minutes so there is room for probing.
-
-Why this is likely: Meta's official prep guide defines the behavioral signals, and candidate reports from 2025 and 2026 describe senior behavioral rounds that probe cross-team conflict and AI use.
+Why this is likely: coach reports say Meta's behavioral signal areas now include AI-driven impact and continuous AI learning, Meta's prescreen asks how candidates assess AI output, and the listing lists AI-native workflows with measurable impact.
 
 ## Prep checklist
 
-- [ ] Solve the 20 most frequent problems on the 1point3acres-derived Meta list (1249, 314, 680, 227, 199, 560, 543, 56, 408, 215 and the rest), two per 40 minutes, without running code, and trace each by hand.
-- [ ] Practice interval, tree, and string-parsing variants with a twist: union of interval lists, vertical order flattened into one list, and cd with `..` and `~`.
-- [ ] Do two timed sessions in Meta's CoderPad practice environment with the AI assistant: fix a bug, implement a core function in a multi-file project, then optimize it. Practice rejecting a hallucinated function.
-- [ ] Implement from scratch: sparse dot product, CSR matrix-vector multiply, k-nearest-neighbor search with a heap, and a softmax attention forward pass.
-- [ ] Rehearse feed ranking and ads click prediction designs end to end in 35 minutes, with QPS, candidate counts, and latency budgets written down.
-- [ ] Read Meta's Andromeda 2024 and 2026 posts, the GEM training post, the sequence learning post, and the Instagram Explore post. Write one paragraph per post on the bottleneck it solved.
-- [ ] Derive by hand: NE for a 2% base rate, the downsampling correction q = p / (p + (1 - p) / w), the pipeline bubble (p - 1) / (m + p - 1), and 16 bytes per parameter for Adam.
-- [ ] Explain TorchRec's sharding types and 2D sparse parallelism, and give one example where table-wise sharding creates a straggler.
-- [ ] Prepare a train-serve skew incident and a silent training divergence incident, each with detection time, root cause, and the systemic fix.
-- [ ] Prepare four behavioral stories, two of which involve AI tools with a measured result, and practice each in under four minutes.
+- [ ] Practice a 60 minute multi-file task with an AI assistant: read the repo, fix a failing test, extend, optimize, and say out loud what you check in each diff.
+- [ ] Practice reviewing AI-generated ML code for hallucinated APIs, off-by-one errors, leakage and wrong metric baselines.
+- [ ] Do a few timed two-problem LeetCode medium sets without running code, in case the classic screen still appears.
+- [ ] Draw two full ranking designs in Mermaid (feed or Reels, and ads) with QPS, funnel sizes and GPU counts.
+- [ ] Prepare one GenAI or agent design with tools, guardrails, prompt-injection handling and an eval plan.
+- [ ] Be able to size embedding tables, choose sharding, and break down MFU losses for a recommendation model.
+- [ ] Rehearse NE, calibration, negative-downsampling correction and delayed-label handling with numbers.
+- [ ] Prepare an evaluation and launch-gate design with slices, confidence intervals and online guardrails.
+- [ ] Write one strategy story with alternatives, numbers and how you got several teams to agree.
+- [ ] Prepare one AI-impact story with before-and-after numbers and a specific AI mistake you caught.
 
 ## Sources
 
-- https://d3no4ktch0fdq4.cloudfront.net/public/course/files/Meta_ML_onsite_interview_prep.pdf
-- https://tryexponent.com/guides/meta-machine-learning-engineer-interview
-- https://www.interviewquery.com/guides/meta-ml-engineer
-- https://prepfully.com/interview-guides/meta-machine-learning-engineer
-- https://www.aced.io/experiences/meta-facebook-machine-learning-engineer-interview-32229f
-- https://www.aced.io/experiences/meta-facebook-senior-machine-learning-engineer-interview-8719a7
-- https://www.aced.io/experiences/meta-facebook-senior-machine-learning-engineer-interview-9efbbd
-- https://leetcode.com/discuss/interview-question/6344393/Meta-or-E4-or-screen-or-MLE-or-US
-- https://leetcode.com/discuss/interview-question/6295593/Meta-MLE-E4E5-Phone-screening-or-Passed-to-Full-loop
-- https://leetcode.com/discuss/interview-experience/6300660/Meta-MLE-system-design-questions
-- https://leetcode.com/discuss/interview-question/5236394/Meta-E6-or-Offer
-- https://roundz.substack.com/p/interview-experience-183-meta-machine-learning-engineer
-- https://www.teamblind.com/post/meta-e6-hc-for-ml-swe-jwwm3dr2
-- https://www.bigocodes.com/meta
-- https://www.fastprep.io/problems/meta-coo-sparse-matrix-multiplication
-- https://www.hellointerview.com/guides/meta/e6
-- https://prachub.com/companies/meta/positions/machine-learning-engineer/categories/ml-system-design
-- https://engineering.fb.com/2026/10/28/ml-applications/meta-andromeda-next-gen-ads-retrieval-gpu-co-design
-- https://engineering.fb.com/2024/12/02/production-engineering/meta-andromeda-advantage-automation-next-gen-personalized-ads-retrieval-engine
-- https://engineering.fb.com/2026/08/03/ml-applications/training-gem-at-llm-scale-meta-ads-recommendation-foundation-model
-- https://engineering.fb.com/2024/11/19/data-infrastructure/sequence-learning-personalized-ads-recommendations
-- https://engineering.fb.com/2023/08/09/ml-applications/scaling-instagram-explore-recommendations-system
-- https://engineering.fb.com/2025/05/21/production-engineering/journey-to-1000-models-scaling-instagrams-recommendation-system
-- https://engineering.fb.com/2022/09/19/ml-applications/data-ingestion-machine-learning-training-meta
-- https://engineering.fb.com/2025/07/22/data-infrastructure/how-meta-keeps-its-ai-hardware-reliable
-- https://pytorch.org/blog/scaling-recommendation-2d-sparse-parallelism
-- https://meta-pytorch.org/torchrec/high-level-arch.html
-- https://arxiv.org/pdf/1906.00091
-- https://quinonero.net/Publications/predicting-clicks-facebook.pdf
-- https://johaupt.github.io/blog/downsampling_recalibration.html
-- https://aisystemcodesign.github.io/papers/Llama3-ISCA25.pdf
-- https://www.intoai.pub/p/distributed-training-of-llama-explained
+- Meta careers, hiring process and FAQ on the AI assistant in interviews: https://www.metacareers.com/hiring-process
+- Meta post announcing the AI-enabled coding interview: https://www.linkedin.com/posts/meta_metacareers-interviewing-softwareengineering-activity-7386046074240737280-wnwA
+- Meta engineering, training the ads recommendation foundation model at LLM scale: https://engineering.fb.com/2026/08/03/ml-applications/training-gem-at-llm-scale-meta-ads-recommendation-foundation-model
+- Meta engineering, scaling Instagram Explore recommendations: https://engineering.fb.com/2023/08/09/ml-applications/scaling-instagram-explore-recommendations-system
+- Candidate report, Meta E6 MLE loop: https://www.reddit.com/r/leetcode/comments/1qxwwh5/sharing_my_meta_e6_mle_interview_experience
+- Candidate report, Meta ML research scientist loop: https://www.reddit.com/r/leetcode/comments/1r37w7q/meta_ml_research_scientist_interview_experience
+- Candidate report, Meta E7 MLE loop and offer: https://www.teamblind.com/post/meta-l7e7-interview-experience-offer-wqnypf12
+- 1point3acres, Meta interview trend summary: https://www.1point3acres.com/interview/guides/meta-interview-trend-2026q2
+- Behavioral signal areas and AI: https://thebehavioral.substack.com/p/how-to-talk-about-ai-in-your-behavioral
+- Prepfully, Meta MLE guide: https://prepfully.com/interview-guides/meta-machine-learning-engineer
+- Prepfully, Meta software engineer guide: https://prepfully.com/interview-guides/meta-software-engineer
+- Hello Interview, Meta AI-enabled coding: https://www.hellointerview.com/blog/meta-ai-enabled-coding
+- applr.ai, Meta AI-enabled coding interview: https://applr.ai/en/blog/2026-10-27-meta-ai-enabled-coding-interview
+- aonecode, Meta AI-native engineer loop (vendor, low confidence): https://aonecode.com/iq/docs/meta/ai-native-engineer/how-it-works
+- IGotAnOffer, Meta project retrospective (vendor, low confidence): https://igotanoffer.com/en/advice/meta-project-retrospective
