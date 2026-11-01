@@ -4,25 +4,25 @@ Likely interview questions based on the public job listing, public hiring guides
 
 ## Likely interview loop (estimate)
 
-Perplexity publishes a technical interviewing portal that lists its round types. Each role uses a subset of them, and your recruiter tells you which ones. The stages below combine that portal with candidate reports from 2025 and 2026. Treat the exact order and count as a guess.
+Perplexity publishes a technical interviewing portal that lists its round types. Each role uses a subset, and the recruiter tells you which. The stages below combine that portal with recent candidate reports. Treat the exact order and count as a guess. Candidate reports from 2026 describe AI-free coding rounds, so AI-free Python is the main thing to prepare.
 
-1. Recruiter call (30 to 45 minutes). Covers your background, why Perplexity, and the team's work. Several candidates say this call can include a real technical question, so prepare for one.
-2. Practical assessment or hands-on coding screen. The practical assessment runs in CoderPad or CodeSignal. It is designed to take 45 to 90 minutes, and you get a 2 or 4 hour window. The live screen is a multi-part Python exercise where each part has its own instructions and tests, and each later part has to keep the earlier parts' tests passing. Perplexity's public example is an agent todo list with task dependencies. Candidates report an in-memory file system and an LLM provider pool with failover. The portal says these rounds skip LeetCode banks, dynamic programming recipes and advanced graph algorithms, and candidates work without AI assistance.
-3. Onsite of about 3 to 5 rounds:
-   - Hands-on coding: another applied, multi-part component. For this team, expect an eval runner, a statistics utility, or a cache.
-   - Agentic coding (possible): a 60 to 120 minute live session, or a 3 hour take-home, where you are expected to use coding agents.
-   - System design (45 to 60 minutes): graded on problem framing, requirements, core architecture, quantitative scaling, tradeoffs and domain expertise. For this role, expect eval environments, regression gates or routing.
-   - Core expertise (likely for this specialized role): a deep conversation about evaluation statistics, grader calibration, routing and inference efficiency, including your own past systems in detail.
-   - Infra or debugging round (reported for some SWE loops): an overloaded service, where you say which metrics you want to see.
-4. Manager or cross-functional conversation focused on ownership, ambiguity and impact. Technical topics still come up.
+1. Recruiter call (20 to 30 minutes). Background, why Perplexity, and the team's work. Some candidates report a light technical question here.
+2. Practical assessment or hands-on coding screen. The practical assessment runs in CoderPad or CodeSignal, is designed for 45 to 90 minutes, and comes with a 2 or 4 hour window. The live screen is a 30 to 60 minute multi-part Python exercise where each part adds tests and earlier tests must keep passing. Perplexity's public example is an agent todo list with dependencies. Candidates report an in-memory file system, a byte tokenizer, and an LLM provider pool with failover. In both formats you may read documentation and ask about library usage, and AI assistance is off. The portal says there are no LeetCode banks, dynamic programming recipes or advanced graph algorithms.
+3. Onsite of about 4 to 5 rounds:
+   - Hands-on coding, no AI: another applied multi-part component. For this team expect an eval runner, statistics code, a cache, or trace analysis.
+   - Agentic coding (possible; no first-hand report for this role yet): a 60 to 120 minute live session outside CoderPad, or a 3 hour async version, where you are expected to drive coding agents on a multi-file task. Your use of the agent is part of what is scored.
+   - System design (45 to 60 minutes): problem framing, requirements, architecture, quantitative scaling and tradeoffs. Expect eval environments, regression gates or routing.
+   - Core expertise (30 to 60 minutes): eval statistics, grader calibration, routing and inference efficiency, and your own past systems in depth.
+   - Hiring manager deep dive (candidates report about 90 minutes): a past project end to end, plus ownership and ambiguity. Some SWE loops add an infra round on an overloaded service.
+4. A final conversation with a founder or senior leader.
 
 ## Questions and answers
 
-### Coding: eval harness infrastructure
+### Coding, no AI, as at Perplexity
 
-#### Q1. Implement an async eval runner that executes N agent tasks against a rate-limited model API, with bounded concurrency, retries on transient errors, per-call timeouts, and results returned in input order.
+#### Q1. Build an async eval runner in three parts (no AI, as at Perplexity): part 1 runs N agent tasks with bounded concurrency and returns results in input order; part 2 adds retries with backoff for 429 and 503 plus a per-call timeout; part 3 adds a requests-per-second limit.
 
-Problem. Input: a list of `(task_id, payload)` pairs and an async function `call(payload)` that may raise a retryable error (429, 503), raise a non-retryable error (a bad schema), or hang. Output: one `Result` per task, in input order, recording success, output or error, attempt count and latency. Constraints: at most `max_concurrency` requests in flight, at most `rate_per_s` request starts per second, at most `max_retries` retries per task, and each attempt bounded by `timeout_s`.
+Spec. Input: a list of `(task_id, payload)` and an async `call(payload)` that may raise `RetryableError`, raise a non-retryable error (bad schema), or hang. Output: one `Result` per task in input order with ok, output or error, attempts and latency. Constraints: at most `max_concurrency` in flight, at most `rate_per_s` starts per second, at most `max_retries` retries, each attempt bounded by `timeout_s`. Each part keeps earlier tests green.
 
 ```python
 from __future__ import annotations
@@ -50,7 +50,7 @@ class TokenBucket:
                     self.tokens -= 1
                     return
                 wait = (1 - self.tokens) / self.rate
-            await asyncio.sleep(wait)  # sleep outside the lock
+            await asyncio.sleep(wait)
 
 @dataclass
 class Result:
@@ -77,35 +77,32 @@ async def run_eval(tasks, call, max_concurrency=16, rate_per_s=10.0,
                 except (RetryableError, asyncio.TimeoutError) as e:
                     if attempt > max_retries:
                         return Result(task_id, False, None, repr(e), attempt, time.monotonic() - start)
-                    # full jitter exponential backoff
                     await asyncio.sleep(random.uniform(0, base_backoff_s * 2 ** (attempt - 1)))
-                except Exception as e:  # non-retryable: fail fast, keep the run going
+                except Exception as e:
                     return Result(task_id, False, None, repr(e), attempt, time.monotonic() - start)
 
     return await asyncio.gather(*(one(t, p) for t, p in tasks))
 ```
 
-Complexity. O(N) tasks and O(N x retries) calls. Memory is O(N) for results plus O(max_concurrency) live coroutines doing work. `gather` preserves input order, so the results come back ordered without a sort step.
+Complexity is O(N x retries) calls and O(N) memory. `gather` returns results in input order, so the runner skips the sort.
 
-There are two separate limiters, and the interviewer will want you to say why. The semaphore caps in-flight requests, which protects memory and the provider's concurrency limit. The token bucket caps the start rate, which is what RPM limits measure. Full jitter on the backoff stops synchronized retry storms after a provider blip. Timeouts count as retryable, while schema errors fail fast so one bad task cannot burn the retry budget.
+I compared two other limiters. A semaphore alone caps in-flight calls but leaves starts unbounded. With 16 slots and 200 ms calls that allows up to 80 starts per second, which breaks a 10 RPS quota. A fixed sleep of 1 / rate between starts honors the quota but wastes throughput after any idle gap, since it cannot burst. The token bucket allows a burst of `capacity` and then holds the long-run rate, so I would pick it and keep the semaphore to bound memory.
 
-Edge cases: an empty task list returns `[]`. With `rate_per_s` below 1, capacity still floors at one token. `asyncio.CancelledError` must propagate, which it does because it is not an `Exception` subclass on 3.8+. A hung call is bounded by `wait_for`.
+For retries, full jitter spreads retries after a provider blip, where fixed backoff would make all 16 workers retry in the same millisecond. Timeouts count as retryable, while schema errors fail on the first attempt, which leaves the retry budget for transient errors. `CancelledError` propagates because it is not an `Exception` subclass on Python 3.8 and later. An empty task list returns `[]`.
 
-Likely follow-ups:
-- Limit tokens per minute instead of requests: make `acquire(cost)` take the estimated prompt plus max output tokens, then refund the difference after the response.
-- Honor `Retry-After` headers and use them to set the backoff.
-- Release the semaphore while sleeping in backoff, so slow retries do not starve fresh tasks.
-- Checkpoint results to disk with an idempotency key `(run_id, task_id, trial)`, so a crashed run resumes and skips the trials it already paid for.
-- Separate agent failures from infrastructure failures in the result, so the eval score counts agent failures only and a 429 stays an infrastructure event.
+Follow-ups to expect: limit tokens per minute with `acquire(cost)` and refund after the response; honor `Retry-After`; release the semaphore during backoff sleeps so fresh tasks can start while retries wait; checkpoint results keyed by `(run_id, task_id, trial)` so a crashed run resumes; and record infrastructure failures such as a 429 separately so the score counts only agent failures.
 
-Why this is likely: Perplexity's hands-on coding guide says exercises build "practical components" of its systems, and the listing makes this team own eval infrastructure, so a concurrent, rate-limited runner is the most direct component to ask for.
+Why this is likely: Perplexity's hands-on coding guide says exercises build practical multi-part components of its systems, and this team owns eval infrastructure, so a rate-limited runner is the most direct component to ask for.
 
-#### Q2. Build an LLM provider pool: route each request to the highest-priority healthy provider, fail over on errors, and bring providers back after a cooldown.
+#### Q2. Build an LLM provider pool (no AI, as at Perplexity): route each request to the highest-priority healthy provider, fail over on retryable errors, eject a provider after repeated failures, and bring it back after a cooldown.
 
-Problem. Input: providers in priority order and an async `call(provider, prompt)` that can raise `RetryableError`. Output: `(provider_used, response)`, or `UNAVAILABLE` when nothing is healthy. Constraints: after `failure_threshold` consecutive failures a provider is ejected (circuit open) for `cooldown_s`. Once the cooldown ends, it is eligible again (half-open), and a single further failure re-ejects it. A success resets its failure count. Inject the clock so the pool can be tested deterministically.
+Spec. Input: providers in priority order and an async `call(provider, prompt)` that can raise `RetryableError`. Output: `(provider_used, response)`, or raise `UNAVAILABLE` when nothing healthy remains. After `failure_threshold` consecutive failures a provider is ejected for `cooldown_s`. After the cooldown it is half-open, and one more failure ejects it again. A success resets it. The clock is injected so tests are deterministic.
 
 ```python
 import time
+
+class RetryableError(Exception):
+    pass
 
 class ProviderPool:
     def __init__(self, providers, failure_threshold=3, cooldown_s=30.0, clock=time.monotonic):
@@ -117,9 +114,6 @@ class ProviderPool:
     def _available(self, p):
         return self.clock() >= self.open_until[p]
 
-    def pick(self):
-        return next((p for p in self.order if self._available(p)), None)
-
     def record(self, p, ok):
         if ok:
             self.fails[p] = 0
@@ -128,7 +122,7 @@ class ProviderPool:
             self.fails[p] += 1
             if self.fails[p] >= self.threshold:
                 self.open_until[p] = self.clock() + self.cooldown
-                self.fails[p] = self.threshold - 1  # half-open after cooldown
+                self.fails[p] = self.threshold - 1
 
     async def complete(self, prompt, call):
         tried = set()
@@ -145,114 +139,212 @@ class ProviderPool:
                 self.record(p, False)
 ```
 
-Complexity. `pick` is O(P) per request, which is fine for a handful of providers. For the large-P variant that candidates report, where up to 1e5 providers get UP and DOWN events, keep a min-heap of healthy indices with lazy deletion, or a sorted set. That gives O(log P) per event.
+Setting `fails` to `threshold - 1` on ejection makes the half-open state cheap, because the first failure after cooldown ejects again without a separate state enum. Each request tries each provider at most once, so an all-down pool fails fast after one pass.
 
-Edge cases: every provider down returns UNAVAILABLE without spinning, because each provider is tried at most once per request. UP and DOWN are idempotent. A recovered higher-priority provider wins the very next request. Non-retryable errors such as a 400 from a bad request should propagate and leave the provider's health count untouched, because the fault lies in the request.
+The linear scan is O(P) per request, fine for 3 to 10 providers. The large variant candidates report, up to about 1e5 providers with UP and DOWN events, needs a min-heap of healthy priority indices with lazy deletion, O(log P) per event, or a sorted container. Consecutive-failure counting reacts in 3 calls but flaps on a provider failing 30% of calls; an error rate over a sliding window of 50 calls is steadier at the cost of slower ejection.
 
-Likely follow-ups:
-- Weighted or latency-aware selection instead of strict priority.
-- Health measured by error rate over a sliding window in place of a consecutive-failure count.
-- Thread safety, or `asyncio.Lock` around `record`, under concurrent use.
-- Model equivalence: failing over from one model to another changes behavior, so an eval run must log which provider actually served each call. Without that log, a silent failover can look like a real quality regression.
-- Hedged requests for tail latency, at extra cost.
+Edge cases: non-retryable errors such as a 400 propagate and leave health untouched, since the request is at fault. UP and DOWN are idempotent. A recovered higher-priority provider wins the next request. Under concurrency, wrap `record` in an `asyncio.Lock` or accept benign races.
 
-Why this is likely: an LLM provider pool with failover appears in several 2025 and 2026 candidate reports of Perplexity coding rounds, and the role owns reliability and multi-model routing.
+Expect the interviewer to push on the eval side. Failing over from one model to another changes behavior, so every eval call must log which provider served it, or a silent failover looks like a quality regression in the gate.
 
-### Coding: eval statistics
+Why this is likely: an LLM provider pool with failover appears in several candidate reports of Perplexity coding rounds, and the listing makes this team own multi-model reliability and routing.
 
-#### Q3. Given per-task scores for a baseline agent A and a candidate agent B on the same task suite, with several trials per task, write a function that returns the mean difference, a 95% bootstrap confidence interval, and a p-value.
+#### Q3. Debug this eval statistics module (no AI, as at Perplexity). A teammate says the regression gate never flags anything and pass^k looks too high. Find the bugs from the failing tests and fix them.
 
-Problem. Input: `scores_a` and `scores_b`, each a dict from `task_id` to a list of trial scores in [0, 1]. Output: delta (B minus A), CI, p-value and n. Constraints: tasks are the unit of independence. Trials within a task are correlated, so resampling individual trials would understate variance. Use only the tasks both systems ran.
+Artifact: the module and its test output.
 
 ```python
 import random
 
-def paired_bootstrap(scores_a, scores_b, n_boot=10_000, alpha=0.05, seed=0):
-    task_ids = sorted(set(scores_a) & set(scores_b))
-    if len(task_ids) < 2:
-        raise ValueError("need at least 2 shared tasks")
-    mean = lambda xs: sum(xs) / len(xs)
-    # collapse trials to a per-task mean first: this is the cluster step
-    diffs = [mean(scores_b[t]) - mean(scores_a[t]) for t in task_ids]
-    n = len(diffs)
-    observed = mean(diffs)
+def pass_hat_k(trials, k):
+    vals = []
+    for outcomes in trials.values():
+        p = sum(outcomes) / len(outcomes)
+        vals.append(p ** k)
+    return sum(vals) / len(vals)
+
+def paired_bootstrap(scores_a, scores_b, n_boot=2000, seed=0):
     rng = random.Random(seed)
-
-    boots = sorted(mean([diffs[rng.randrange(n)] for _ in range(n)]) for _ in range(n_boot))
-    lo = boots[int((alpha / 2) * n_boot)]
-    hi = boots[int((1 - alpha / 2) * n_boot) - 1]
-
-    # sign-flip randomization test: under H0 each paired diff is symmetric around 0
-    extreme = 0
+    a = [s for t in scores_a for s in scores_a[t]]
+    b = [s for t in scores_b for s in scores_b[t]]
+    delta = sum(b) / len(b) - sum(a) / len(a)
+    boots = []
     for _ in range(n_boot):
-        flipped = mean([d if rng.random() < 0.5 else -d for d in diffs])
-        if abs(flipped) >= abs(observed) - 1e-12:
-            extreme += 1
-    p_value = (extreme + 1) / (n_boot + 1)
-    return {"delta": observed, "ci": (lo, hi), "p_value": p_value, "n_tasks": n}
+        ra = [rng.choice(a) for _ in a]
+        rb = [rng.choice(b) for _ in b]
+        boots.append(sum(rb) / len(rb) - sum(ra) / len(ra))
+    boots.sort()
+    return delta, (boots[int(0.025 * n_boot)], boots[int(0.975 * n_boot)])
 ```
 
-Complexity. O(n_boot x n) time and O(n_boot) memory. With numpy you vectorize this as `diffs[rng.integers(0, n, (n_boot, n))].mean(1)`.
+```text
+FAIL test_pass_hat_k_unbiased     AssertionError 0.25 (expected 0.1667 for 2 of 4 passes, k=2)
+FAIL test_paired_ci_excludes_zero AssertionError (0.019, -0.016, 0.055)
+FAIL test_uses_shared_tasks_only  AssertionError 0.25 (expected 0.0)
+failures: 3
+```
 
-Pairing matters because the variance of a difference is Var(A) + Var(B) - 2Cov(A, B). Task difficulty dominates agent eval variance and is shared by both systems, so the covariance is large and the paired interval is often a third to a half the width of an unpaired one. Averaging trials first follows Miller's "Adding Error Bars to Evals": the per-task mean shrinks within-task variance by a factor of K, and the task-level resample gives a cluster-robust interval. When tasks come in families, such as many tasks from one connector, resample families instead.
+Bug 1 is a biased pass^k. The code raises the sample pass rate to the power k, which is biased when n is small. With 2 passes in 4 trials and k = 2, the chance that 2 trials drawn without replacement both pass is C(2,2)/C(4,2) = 1/6, while the code returns 0.25. Use the unbiased C(c,k)/C(n,k), and reject tasks with fewer than k trials.
 
-Edge cases: the two runs having different task sets (intersect them and report what was dropped), all diffs zero (the p-value is near 1), and tiny n, where the percentile interval undercovers and BCa or a t-interval is safer.
+Bug 2 is an unpaired bootstrap. The code flattens trials and resamples A and B independently, which throws away the pairing. Task difficulty varies far more than the 2 point effect, so the interval is about 7 points wide and always crosses zero, which is why the gate never fires. Resample tasks and take the difference within each task. That cancels difficulty and narrows the interval, typically by a quarter to a half when task difficulty dominates the variance. Here it narrows enough that the interval excludes zero.
 
-Likely follow-ups:
-- For binary single-trial outcomes, McNemar's test on the discordant pairs is the exact paired test.
-- Run a power analysis before launching. The minimum detectable effect is about (z_alpha/2 + z_beta) x sd(diff) / sqrt(n). With sd 0.4 and 300 tasks that is about 2.8 x 0.4 / 17.3, or roughly 6.5 points.
-- Correct for multiple comparisons when a gate checks twenty slices (Holm or Benjamini-Hochberg).
-
-Why this is likely: the listing asks for "strong experimental and statistical judgment", and a candidate report lists stream-probability and sampling questions in a Perplexity technical screen, so implementing a paired significance test in code is a natural applied version.
-
-#### Q4. Implement unbiased estimators for pass@k and pass^k from n trials per task, and explain when each is the right reliability metric for an enterprise agent.
-
-Problem. Input: `trials`, a dict from task to a list of 0/1 outcomes (n_i trials, c_i successes). Output: the suite-level pass^k (all k attempts succeed) and pass@k (at least one of k succeeds). Constraint: k ≤ n_i for every task. Run more than k trials per task where the budget allows, because an estimate from exactly k trials has high variance.
+Bug 3 is mismatched task sets. A has a hard task B never ran, so B looks 25 points better. Compare only shared tasks and report the dropped ones.
 
 ```python
-import math
+import math, random
 
 def pass_hat_k(trials, k):
     vals = []
     for task, outcomes in trials.items():
         n, c = len(outcomes), sum(outcomes)
         if n < k:
-            raise ValueError(f"task {task} has {n} trials < k={k}")
-        vals.append(math.comb(c, k) / math.comb(n, k))       # P(all k sampled are successes)
+            raise ValueError(f"{task}: {n} trials < k={k}")
+        vals.append(math.comb(c, k) / math.comb(n, k))
     return sum(vals) / len(vals)
 
-def pass_at_k(trials, k):
-    vals = []
-    for task, outcomes in trials.items():
-        n, c = len(outcomes), sum(outcomes)
-        if n < k:
-            raise ValueError(f"task {task} has {n} trials < k={k}")
-        vals.append(1 - math.comb(n - c, k) / math.comb(n, k))  # 1 - P(all k are failures)
-    return sum(vals) / len(vals)
+def paired_bootstrap(scores_a, scores_b, n_boot=2000, alpha=0.05, seed=0):
+    tasks = sorted(set(scores_a) & set(scores_b))
+    if len(tasks) < 2:
+        raise ValueError("need at least 2 shared tasks")
+    mean = lambda xs: sum(xs) / len(xs)
+    diffs = [mean(scores_b[t]) - mean(scores_a[t]) for t in tasks]
+    n, rng = len(diffs), random.Random(seed)
+    boots = sorted(mean([diffs[rng.randrange(n)] for _ in range(n)]) for _ in range(n_boot))
+    lo = boots[int(alpha / 2 * n_boot)]
+    hi = boots[int((1 - alpha / 2) * n_boot) - 1]
+    dropped = sorted(set(scores_a) ^ set(scores_b))
+    return mean(diffs), (lo, hi), dropped
 ```
 
-With `{"t1": [1,1,1,1], "t2": [1,1,0,1], "t3": [0,0,0,1]}`: pass^1 = pass@1 = 0.667, pass^2 = 0.5 and pass@2 = 0.833.
+Alternatives: McNemar's test on binary per-task outcomes is exact and instant but ignores multiple trials per task; a paired t-test on task deltas is close to the bootstrap at 300 or more tasks and costs O(n) instead of O(n x 2000). I keep the bootstrap because it also handles skewed cost metrics.
 
-Complexity. O(T) after counting. `math.comb` is exact for integers, so there is no float overflow. For large n you would compute the product of (c - i)/(n - i) for i in range(k) instead.
+Why this is likely: the team ships regression gates whose correctness rests on exactly this statistics code, and a debug task with failing tests fits Perplexity's applied hands-on coding format.
 
-The estimators are unbiased because choosing k of the n observed trials without replacement and asking whether all succeeded gives C(c,k)/C(n,k), whose expectation over trial draws equals p^k for the task's true success rate p. These are the formulas from the tau-bench paper (Yao et al., 2024) and the Codex paper's pass@k.
+#### Q4. Review this AI-generated LLM judge harness before it merges (no AI, as at Perplexity). List every defect, rank by severity, and write the fixed version.
 
-The pass@k metric suits tools where a human picks the best of several attempts, or a verifier can. pass^k suits agents that act on enterprise systems, because a user who sends the same request on Monday and Tuesday expects both to work. The metrics diverge sharply. A 75% per-trial agent has pass^3 = 0.42 (Anthropic's example), and at k = 10 pass@k approaches 1 while pass^k approaches 0. Suite-level pass^k is the mean of p_i^k, not (mean p)^k, so a suite split between always-pass and coin-flip tasks scores far higher than one where every task is 75%.
+Artifact: the generated code.
 
-Edge cases: tasks with different n_i are fine. Exclude tasks with n_i < k and list them in the report. Trials must vary only through sampling. If environment state leaks between trials, they are not independent.
+```python
+import asyncio, json, logging
+log = logging.getLogger("judge")
 
-Likely follow-ups:
-- Put a CI on pass^k by bootstrapping over tasks.
-- Choose n per task when trials are expensive (n = 2k is a common minimum).
-- Report pass^k alongside cost, because retry-until-success shifts cost into a reliability number.
+async def grade_all(cases, call_judge, out_dir, concurrency=8):
+    async def one(case):
+        raw = await call_judge(case["prompt"], case["answer"])
+        log.info("judge raw=%s headers=%s", raw, case["headers"])
+        verdict = eval(raw)
+        with open(f"{out_dir}/{case['id']}.json", "w") as f:
+            json.dump(verdict, f)
+        return verdict
+    results = await asyncio.gather(*(one(cases[i]) for i in range(1, len(cases))),
+                                   limit=concurrency)
+    scores = [r["score"] for r in results]
+    return {"n": len(cases), "mean": sum(scores) / len(scores)}
+```
 
-Why this is likely: the listing measures "task success and reliability", and pass^k is the standard reliability metric from tau-bench, which Perplexity's own agent evaluation guide and Anthropic's agent eval guide both discuss.
+Defects, most severe first:
+1. Security: `eval(raw)` runs model output as Python. The judge reads agent answers, which can carry text that steers the judge into emitting `__import__('os').system(...)`. That is code execution through prompt injection. Parse JSON with a schema instead.
+2. Security: `case["id"]` goes straight into a path, so an id of `../../etc/x` writes outside `out_dir`. Validate ids against an allowlist pattern and resolve under the directory.
+3. Security: logging `headers` writes tenant auth tokens into logs. Log ids and lengths only.
+4. Hallucinated API: `asyncio.gather` has no `limit` argument, so this raises `TypeError` on the first run. Concurrency needs a semaphore.
+5. Off-by-one: `range(1, len(cases))` silently drops the first case, so every reported mean is computed on N minus 1 cases while `n` claims N.
+6. Missing edge cases: an unparseable verdict raises and kills the whole batch, a score of 9 on a 1 to 5 rubric is accepted, and an all-failed batch divides by zero.
 
-### Coding: caching
+```python
+import asyncio, json, logging, re
+from pathlib import Path
 
-#### Q5. Implement a block-level prefix cache for prompt KV state, keyed so that two requests sharing a token prefix reuse the same blocks, with LRU eviction and tenant isolation.
+log = logging.getLogger("judge")
+VERDICT_RE = re.compile(r"\{.*\}", re.S)
+SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
-Problem. Input: token id sequences. `insert(tokens, salt)` stores blocks for a processed prompt. `lookup(tokens, salt)` returns how many leading tokens are already cached. Constraints: fixed `block_size` (vLLM defaults to 16 tokens), only full blocks are cached, there is a capacity of `max_blocks` with least-recently-used eviction, and a block is identified by its own tokens plus everything before it.
+def parse_verdict(text):
+    m = VERDICT_RE.search(text or "")
+    if not m:
+        return None
+    try:
+        obj = json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return None
+    score = obj.get("score")
+    if not isinstance(score, (int, float)) or not 1 <= score <= 5:
+        return None
+    return {"score": float(score), "reason": str(obj.get("reason", ""))[:500]}
+
+async def grade_all(cases, call_judge, out_dir, concurrency=8):
+    sem = asyncio.Semaphore(concurrency)
+    out_dir = Path(out_dir).resolve()
+    async def one(case):
+        if not SAFE_ID.match(case["id"]):
+            raise ValueError(f"bad case id {case['id']!r}")
+        async with sem:
+            raw = await call_judge(case["prompt"], case["answer"])
+        v = parse_verdict(raw)
+        if v is None:
+            log.warning("unparseable verdict case=%s len=%d", case["id"], len(raw or ""))
+        (out_dir / f"{case['id']}.json").write_text(json.dumps({"id": case["id"], "verdict": v}))
+        return v
+    results = await asyncio.gather(*(one(c) for c in cases))
+    scored = [r["score"] for r in results if r]
+    return {"n": len(cases), "parsed": len(scored),
+            "mean": sum(scored) / len(scored) if scored else None}
+```
+
+Report `parsed` next to `n`. If the parse rate drops from 99% to 80% after a judge prompt change, the mean comes from a biased subset and the gate should mark the run untrusted. For parsing, provider structured outputs with a JSON schema remove most parse failures but tie you to one provider; regex plus `json.loads` works across all of them at a cost of roughly 1% unparseable verdicts that you must count.
+
+Why this is likely: candidate reports (r/Hack2Hire) and Perplexity's official hands-on coding page describe onsite log processing and debug-failure exercises, and the listing makes this team own judges and graders; the review-of-generated-code framing is inferred, not reported.
+
+#### Q5. Find the root cause in this agent trace and write a detector that flags the pattern across a million traces (no AI, as at Perplexity).
+
+Artifact: the trace for a session the user rated thumbs down.
+
+```text
+step 0 user      "Summarize Q3 churn from the finance drive"
+step 1 tool_call drive.search {"q": "Q3 churn"}         200  hits=[f_91 "Q3 churn final.xlsx"]
+step 2 tool_call drive.read   {"id": "f_91"}            403  {"error": "forbidden"}
+step 3 thought   "Read failed, retrying"
+step 4 tool_call drive.read   {"id": "f_91"}            403  {"error": "forbidden"}
+step 5 tool_call drive.read   {"id": "f_91"}            403  {"error": "forbidden"}
+step 6 tool_call web.search   {"q": "Q3 churn"}         200  10 public results
+step 7 final     "Q3 churn was 4.1%"
+tokens_in=48210 tokens_out=612 latency_ms=21400
+principal=analyst_7 acl(f_91)=[finance_leads]
+```
+
+The root cause is that search returns a file the principal cannot read, because the search connector does not filter by ACL. The 403 body is a bare "forbidden" with no hint, so the agent treats it as transient and retries the identical call twice. Then it falls back to public web search and states a number from an unrelated public company as if it were the tenant's figure. There are three faults with three owners: the connector (search leaks titles of unreadable files), the tool result (non-actionable error), and the agent policy (no refusal path, unsourced claim). The user-visible harm is the last one, a confident wrong answer, so the eval task I would add has a success predicate of "tells the user they lack access to f_91 and makes no numeric claim".
+
+```python
+import hashlib, json
+from collections import Counter
+
+def call_key(ev):
+    args = json.dumps(ev.get("args", {}), sort_keys=True)
+    return ev["tool"] + ":" + hashlib.sha1(args.encode()).hexdigest()[:12]
+
+def find_loops(events, max_repeats=3, window=8):
+    findings, recent = [], []
+    for i, ev in enumerate(events):
+        if ev.get("type") != "tool_call":
+            continue
+        recent.append((i, call_key(ev), ev.get("status")))
+        recent = recent[-window:]
+        counts = Counter(k for _, k, _ in recent)
+        key, n = counts.most_common(1)[0]
+        if n >= max_repeats:
+            errs = [s for _, k, s in recent if k == key and s and s >= 400]
+            findings.append({"step": i, "key": key, "repeats": n,
+                             "kind": "error_retry_loop" if len(errs) == n else "repeat_loop"})
+            recent = [r for r in recent if r[1] != key]
+    return findings
+```
+
+On this trace it returns one `error_retry_loop` at step 5. It is O(steps x window) per trace and streams, so it runs as a map job over the trace store. An LLM judge over every trace catches subtler failures but at about 50k tokens per trace costs roughly 50B tokens for a million traces, so I run cheap detectors first and judge only flagged and sampled traces. A second detector would flag a final answer containing numbers when no successful tool result contained them.
+
+Why this is likely: the listing asks you to analyze agent trajectories and production failures and identify root causes, and candidate reports describe debugging rounds built on logs.
+
+#### Q6. Implement a block-level prefix cache for prompt KV state (no AI, as at Perplexity): requests sharing a token prefix reuse blocks, with LRU eviction and tenant isolation.
+
+Spec. `insert(tokens, salt)` stores blocks for a processed prompt; `lookup(tokens, salt)` returns how many leading tokens are cached. Fixed `block_size` (vLLM defaults to 16), only full blocks cached, capacity `max_blocks` with LRU eviction, and a block is identified by its own tokens plus everything before it.
 
 ```python
 import hashlib
@@ -261,15 +353,14 @@ from collections import OrderedDict
 class PrefixCache:
     def __init__(self, block_size=16, max_blocks=1024):
         self.bs, self.max_blocks = block_size, max_blocks
-        self.blocks = OrderedDict()   # block_hash -> KV handle (placeholder here)
+        self.blocks = OrderedDict()
 
     def _hashes(self, tokens, salt=""):
-        h = hashlib.sha256(salt.encode()).hexdigest()   # salt isolates tenants
+        h = hashlib.sha256(salt.encode()).hexdigest()
         out = []
-        full = len(tokens) - len(tokens) % self.bs       # only full blocks
+        full = len(tokens) - len(tokens) % self.bs
         for i in range(0, full, self.bs):
             block = tokens[i:i + self.bs]
-            # chain: hash(parent_hash, block tokens) so a block encodes its whole prefix
             h = hashlib.sha256((h + "|" + ",".join(map(str, block))).encode()).hexdigest()
             out.append(h)
         return out
@@ -278,7 +369,7 @@ class PrefixCache:
         hit = 0
         for h in self._hashes(tokens, salt):
             if h not in self.blocks:
-                break                                   # prefix match stops at first miss
+                break
             self.blocks.move_to_end(h)
             hit += 1
         return hit * self.bs
@@ -290,120 +381,158 @@ class PrefixCache:
             else:
                 self.blocks[h] = object()
                 if len(self.blocks) > self.max_blocks:
-                    self.blocks.popitem(last=False)     # evict LRU
+                    self.blocks.popitem(last=False)
 ```
 
-Complexity. Hashing is O(L) per request for L tokens. Lookup and insert are O(L / block_size) dict operations, each O(1). Memory is O(max_blocks).
+Lookup and insert are O(L / block_size) dict operations after O(L) hashing; memory is O(max_blocks).
 
-The hashes are chained because hashing a block alone would let "B" after prefix "A" collide with "B" after prefix "X". Those blocks have different KV values, because attention at every position depends on everything before it. Chaining the parent hash makes the key encode the full prefix, so a dict replaces an explicit trie. This is the vLLM automatic prefix caching design, which also folds LoRA ids, multimodal input hashes and a cache salt into the key. SGLang's RadixAttention reaches the same reuse with a radix tree instead.
+The hashes are chained because hashing a block alone would let block B after prefix A collide with B after prefix X, but their KV values differ because attention at every position depends on everything before it. Chaining makes the key encode the full prefix, so a flat dict replaces a trie. This mirrors vLLM automatic prefix caching, which also folds LoRA ids and a cache salt into the key.
+
+A radix tree (SGLang RadixAttention) matches at token granularity, so a 1,000 token shared prefix reuses all 1,000 tokens instead of 992 with 16 token blocks, at the cost of pointer-heavy nodes and harder eviction. Hashing whole prompts is simplest but gives zero reuse across agent turns that append to the same prefix, where block chaining gives close to 100% reuse of the history.
 
 Edge cases:
-- A one-token change near the top of the prompt misses every later block. This is why timestamps and per-user fields belong at the end of the prompt.
-- Without a salt, cache hit latency becomes a cross-tenant timing side channel.
-- Evicting a parent while its child stays cached leaves an unreachable child. Production engines evict leaves first, or refcount blocks in use by running requests and never evict those.
+- One changed token near the top misses every later block, which is why timestamps belong at the end of the prompt.
+- Without a salt, hit latency becomes a cross-tenant timing side channel.
+- Evicting a parent while a child stays cached leaves an unreachable child. Production engines evict leaves first and never evict blocks referenced by running requests.
 
-Likely follow-ups:
-- Evict only blocks with refcount zero.
-- Compute the hit rate for an agent loop where each turn appends to the previous prompt (near 100% when the prefix is stable).
-- Make a router cache-aware, by sending a session to the replica that holds its prefix.
+Follow-ups: refcounts, hit rate for a 12 turn agent loop, and cache-aware routing of sessions to the replica holding their prefix.
 
-Why this is likely: the listing names caching and context management as efficiency levers, and the coding brief for this team calls for a data structure or caching problem. A prefix cache is the one that maps directly onto inference cost.
+Why this is likely: the listing names caching and context management as efficiency levers, and a prefix cache is the data structure that maps directly onto inference cost.
+
+### Agentic coding, AI assistant allowed
+
+#### Q7. Agentic coding round (AI assistant allowed): add a `gate` command to this eval harness repo that compares a candidate run with a baseline per slice, blocks on hard invariant failures, and blocks when a slice regresses beyond a margin. Show how you drive the agent.
+
+Artifact: the repo and the spec.
+
+```text
+evalkit/
+  pyproject.toml
+  evalkit/__init__.py
+  evalkit/cli.py            # argparse; subcommands: run, report
+  evalkit/store.py          # load_run(path) -> {task_id: score}, load_meta(path)
+  evalkit/stats.py          # paired_bootstrap(a, b) from Q3
+  evalkit/slices.py         # task_slice(task_id) -> "crm" | "docs" | ...
+  evalkit/invariants.py     # failed_invariants(run) -> set[str]
+  tests/test_stats.py
+  tests/test_cli.py
+  tests/fixtures/base.jsonl
+  tests/fixtures/cand.jsonl
+Spec: evalkit gate BASE CAND [--margin -0.02] exits 1 if any invariant failed
+or any slice with >= 20 tasks has a lower CI bound below margin, Bonferroni
+across slices; slices under 20 tasks are reported, never blocking.
+```
+
+Delegation plan. First I read `cli.py`, `store.py` and `stats.py` myself for five minutes, since the agent writes better code when my prompt names the real interfaces. Then two prompts. Prompt 1: "Write `evalkit/gate.py` with `gate(base, cand, task_slice, margin, invariants_failed)` returning per-slice verdicts. Reuse nothing from stats.py; paired deltas on shared tasks only; Bonferroni alpha 0.05/m; slices under 20 tasks never block. Write tests first in `tests/test_gate.py` covering a regressed slice, a clean slice, an invariant failure and a tiny slice." Prompt 2: "Wire `gate` into `cli.py` as a subcommand with exit code 1 on block, plus a CLI test using the fixtures." Small prompts keep each diff reviewable.
+
+In the diff I check that tasks are intersected, alpha is divided by the number of slices, the lower bound uses alpha rather than alpha / 2 because the test is one-sided, invariants short-circuit before statistics, and `stats.py` signatures that other callers use stay the same. Tests I run: `pytest -q tests/`, then the CLI against the fixtures, then a mutation check where I edit the fixture to regress one slice by 10 points and confirm exit code 1.
+
+Here is a wrong output I caught. The agent's first version computed one bootstrap over all tasks and then split the resampled means by slice, which mixes slices. It reported the CRM slice as passing because a flat docs slice diluted a 10 point CRM drop. Its own test checked only the overall delta, so it passed. I added the per-slice regression test, which failed, and told the agent to bootstrap within each slice. The core after the fix:
+
+```python
+import random
+from dataclasses import dataclass
+
+@dataclass
+class Verdict:
+    slice: str
+    delta: float
+    lo: float
+    blocked: bool
+    reason: str
+
+def gate(base, cand, task_slice, margin=-0.02, invariants_failed=(), n_boot=2000, seed=0):
+    if invariants_failed:
+        return [Verdict("*", 0.0, 0.0, True, f"invariant: {sorted(invariants_failed)[0]}")]
+    groups = {}
+    for t in sorted(set(base) & set(cand)):
+        groups.setdefault(task_slice[t], []).append(cand[t] - base[t])
+    rng, m, out = random.Random(seed), len(groups), []
+    for name, d in sorted(groups.items()):
+        n, mean = len(d), sum(d) / len(d)
+        if n < 20:
+            out.append(Verdict(name, mean, float("nan"), False, "too few tasks; report only"))
+            continue
+        boots = sorted(sum(d[rng.randrange(n)] for _ in range(n)) / n for _ in range(n_boot))
+        lo = boots[int(0.05 / m * n_boot)]
+        out.append(Verdict(name, mean, lo, lo < margin, "regressed" if lo < margin else "ok"))
+    return out
+```
+
+On a 300 task fixture with CRM down 10 points, CRM returns a lower bound near minus 0.10 and blocks while docs passes. Alternative designs: a single pooled test is faster but hides slice regressions, as shown; Benjamini-Hochberg instead of Bonferroni blocks more true regressions across 20 slices but tolerates about 5% false blocks among flagged slices.
+
+Why this is likely: Perplexity's agentic coding round requires coding agents on a multi-file task, and a regression gate is the artifact this team ships (official round format, high confidence; low confidence that this specific role includes it, since no first-hand MTS-evals report was found).
 
 ### System design
 
-#### Q6. Design a reproducible evaluation environment for enterprise agents: connected apps (mail, docs, tickets, CRM), realistic data, user roles and permissions, multi-step workflows.
+#### Q8. Design a reproducible evaluation environment for enterprise agents with connected apps (mail, docs, tickets, CRM), realistic data, roles and permissions, and multi-step workflows.
 
-Requirements. Thousands of tasks, each run 3 to 8 times for pass^k, so about 20k to 50k trials per full suite. Each trial starts from an identical state in isolation, sees production tool schemas, and is graded on end state. A full suite finishes in under 2 hours.
+Assume about 5k tasks, each run 3 to 8 times for pass^k, so 20k to 40k trials per full suite. Every trial starts from identical state in isolation, sees production tool schemas, and is graded on end state. A full suite finishes in under 2 hours, which at 3 minutes per trial means 750 to 1,000 trials in parallel.
 
 Components:
-1. Connector fakes behind the production interfaces. Each app is a stateful service that implements the same MCP or tool schema as the real connector. Contract tests replay recorded real API calls against each fake on every connector release to catch drift.
-2. A world generator. It produces an org (people, teams, managers), documents, threads and tickets from templates and seeds. It injects near-duplicate names, stale docs with newer replacements, long threads and partial access.
-3. Identity and permissions. Each task runs as a specific principal with ACLs enforced inside the fakes, and the suite includes tasks whose correct outcome is a refusal or "you lack access".
-4. Snapshot and restore. Each world is a versioned snapshot: a database dump plus a blob store. A trial gets a copy-on-write clone, with a frozen clock and seeded simulated users (an LLM user simulator, as in tau-bench).
-5. A task spec: instruction, principal, world version, success predicates over end state (for example "a ticket exists with priority P1 assigned to the on-call owner, and no email was sent outside the domain"), forbidden actions, and an optional rubric for an LLM grader.
-6. A runner and trace store. Each trial logs every tool call, result, token count and latency, plus the before and after world diff.
+1. Connector fakes behind production interfaces. Each app is a stateful service implementing the same tool schema as the real connector. Contract tests replay recorded real calls against each fake on every connector release to catch drift.
+2. A world generator that builds an org, documents, threads and tickets from seeds, injecting near-duplicate names, stale docs with newer replacements, long threads and partial access.
+3. Identity and ACLs enforced inside the fakes, with tasks whose correct outcome is a refusal, such as the 403 case in Q5.
+4. Snapshot and restore. Each world is a versioned database dump plus blob store, cloned copy-on-write per trial, with a frozen clock and a seeded user simulator.
+5. Task specs: instruction, principal, world version, success predicates over end state, forbidden actions, optional rubric.
+6. A runner and trace store logging every tool call, tokens and latency plus the world diff.
 
-The hard parts:
-- Nondeterminism from the model, the user simulator and wall-clock tools. Freeze what you can, and measure the rest with repeated trials.
-- Graders that check state diffs. They catch an agent that claims success without acting, or does extra damage.
-- Task validity. Have a human solve a sample of tasks. Anthropic's guidance is that when no one succeeds at a task, the task itself is usually broken.
+High-fidelity fakes cost perhaps one engineer-week per connector to build and ongoing upkeep, but support any trajectory. Record and replay costs hours per connector but breaks on any unseen call, so in practice 20% to 40% of new trajectories fall off the recording. Real staging tenants are the most faithful but run at 30 to 60 seconds per reset and leak state between trials. I would use fakes for the five core apps, replay for the long tail, and a nightly canary of 100 tasks on real staging tenants to measure fake drift as a pass-rate gap.
 
-Tradeoffs. High-fidelity fakes are expensive to maintain, while record and replay is cheap but breaks on any new trajectory. Use fakes for the core apps, replay for the long tail, and a small canary suite against real staging tenants to catch fake drift.
+Hard parts: nondeterminism (freeze what you can, measure the rest with repeated trials); graders that check state diffs, so an agent that claims success without acting fails; and task validity, where a human solves a sample and any task no model passes is reviewed as possibly broken.
 
-Why this is likely: building "realistic enterprise evaluation environments spanning connected applications, representative datasets, user roles and permissions" with "reproducible system state" is the listing's first responsibility, and Perplexity's system design guide says questions cover domains relevant to the team.
+Why this is likely: building realistic enterprise evaluation environments with connected applications, user roles, permissions and reproducible state is the first responsibility in the listing, and Perplexity's system design guide says questions cover the team's domain.
 
-#### Q7. Design the regression gate that decides whether a model, connector, tool, skill, or harness change can ship.
+#### Q9. Design the regression gate that decides whether a model, connector, tool, skill or harness change can ship.
 
-Requirements. Changes land daily from four teams. The gate must answer three questions: did anything get worse beyond noise, on which slices, and at what cost. A verdict should arrive in under 30 to 60 minutes for normal PRs, with a deeper nightly run. False blocks must stay rare, or engineers stop trusting the gate.
+Requirements. Changes land daily from several teams. The gate answers three questions: did anything get worse beyond noise, on which slices, and at what cost. Verdicts in under 30 minutes for normal PRs, deeper runs nightly. Keep false blocks rare so engineers keep trusting it.
 
 Design:
-1. Tiered suites. A smoke tier (about 100 tasks, 1 trial) runs on every PR in about 10 minutes. A gate tier (1k to 2k tasks, 3 trials) runs before merge to main or a model swap. A full tier (all tasks, 5+ trials plus long-horizon tasks) runs nightly and before launches. Each change type maps to the slices it can affect, such as a connector change triggering that connector's tasks.
-2. Fixed baselines. Compare against a pinned baseline run on the same task versions, and re-run the baseline when the world or graders change.
-3. Statistical decision. For each metric and slice, compute the paired delta with a cluster bootstrap CI (Q3). Block if the upper bound of the regression CI exceeds a pre-agreed non-inferiority margin, for example -2 points on task success, or a 10% p95 latency increase, or a 10% increase in cost per successful task. Use Holm or Benjamini-Hochberg across slices so twenty slices do not produce a false alarm on every run.
-4. Hard invariants with no statistics. Forbidden actions (data sent outside an ACL, destructive calls without confirmation), schema validity, and safety tasks have zero tolerance. A single failure blocks.
-5. Grader health. Run the grader on a fixed calibration set on each gate run. If judge agreement with human labels drops, the gate marks the result untrusted, and an untrusted result cannot count as a pass.
-6. Output. A report with deltas, CIs, newly failing tasks with links to trajectories, and a cost and latency table. Overrides need a named owner and are logged.
+1. Tiered suites. Smoke: 100 tasks, 1 trial, about 10 minutes on every PR. Gate: 1.5k tasks, 3 trials, before merge to main or a model swap. Full: all tasks with 5 or more trials nightly. Each change type maps to the slices it can touch.
+2. A pinned baseline on the same task versions, re-run when worlds or graders change.
+3. A statistical decision per slice: paired bootstrap lower bound against a non-inferiority margin, such as minus 2 points on success, plus 10% on p95 latency, or plus 10% on cost per successful task (Q3 and Q7 code).
+4. Hard invariants with zero tolerance: data sent outside an ACL, destructive calls without confirmation, schema violations.
+5. Grader health: re-score a fixed calibration set each run; if judge agreement with humans drops, the result is marked untrusted and cannot pass.
+6. Output: deltas, intervals, newly failing tasks with trace links, a cost table, and logged overrides with a named owner.
 
-The hard parts: flakiness (track a per-task flip rate and quarantine tasks that flip with no code change), suite saturation (rotate in tasks drawn from fresh production failures), and budget. Example budget: 2k tasks x 3 trials x about 40k tokens is about 240M tokens per gate run, so prompt caching of shared prefixes and cheaper smoke tiers matter.
+Start with power. With 1.5k tasks and a per-task delta standard deviation near 0.25, the standard error is about 0.65 points, so the gate detects a 2 point drop reliably, while the 100 task smoke tier only detects drops near 8 points. For budget, 1.5k tasks x 3 trials x 40k tokens is 180M tokens per gate run, so caching shared prefixes (Q12) matters. Among other decision rules, a fixed threshold on the raw mean ("block if success falls 0.5 points") is simple but at this noise level blocks about one in five clean PRs; sequential testing stops early on clear wins or losses and cuts average cost by roughly 40%, but is harder to explain to the teams being gated. I would start with the fixed-sample bootstrap and add sequential stopping once trust is earned.
 
-Tradeoffs. A strict margin catches more regressions but blocks more good changes. Non-inferiority testing is the right framing for efficiency work, where the goal is "no worse and cheaper".
+Hard parts: flaky tasks (track per-task flip rate with no code change and quarantine above 20%), saturation (rotate in fresh production failures), and slices too small to test, which are reported but never block.
 
-Why this is likely: the listing asks you to build "regression gates and launch-readiness signals for model, connector, tool, skill, and harness changes", and Perplexity's agent evaluation blog lays out the same regression-check workflow.
+Why this is likely: the listing asks for regression gates and launch-readiness signals for model, connector, tool, skill and harness changes, and Perplexity's agent evaluation post describes the same workflow.
 
-#### Q8. Design a model routing and effort-selection system for enterprise agent tasks that minimizes cost per successful task without dropping quality.
+#### Q10. Design a model routing and effort-selection system for enterprise agent tasks that minimizes cost per successful task without losing quality.
 
-Requirements. Several model families (Perplexity's Computer runs GPT, Claude Opus and Claude Sonnet orchestrators), each with effort or reasoning levels. The router decides per task, and sometimes per step, which model and effort to use. Targets: quality within a non-inferiority margin of an all-frontier baseline, lower cost per successful task, and p95 latency budgets per product surface. Routing overhead has to stay under about 50 ms.
+There are several model families, each with effort levels. The router chooses per task, and maybe per step. Targets: success within a non-inferiority margin of an all-frontier baseline, lower cost per successful task, p95 latency budgets per surface, and routing overhead under 50 ms.
 
 Components:
-1. Features. Request text embedding, task type from a classifier, connectors in scope, expected horizon, tenant tier, and conversation history so far.
-2. A router model that predicts P(success | model, effort, features) and expected cost and latency for each option. Options include matrix factorization, a small BERT classifier, or similarity-weighted ranking, as in RouteLLM, which reports cutting cost by more than 2x on benchmarks at near-equal quality. Pick the cheapest option whose predicted success clears a threshold, or maximize success minus lambda x cost, where lambda is tuned on the eval set to land on the cost-quality frontier.
-3. Escalation, the cascade pattern from FrugalGPT. Start cheap and escalate when a verifier, a self-check or a tool-error signal says the step failed. Escalation suits agents because failures are often detectable mid-trajectory: a schema error, an empty search result, a loop.
-4. Training data. Run the eval suite with every candidate model and record outcomes per task, giving labels for "would the cheap model have succeeded". Add production traces graded by calibrated judges.
-5. Online control. Shadow the router before it takes traffic, then run an A/B test on task success, retries and user-visible failure. Keep a per-tenant kill switch.
+1. Features: request embedding, a task-type classifier, connectors in scope, expected horizon, tenant tier, history so far.
+2. A router that predicts success, cost and latency per option and picks the cheapest option clearing a success threshold, or maximizes success minus lambda x cost, with lambda tuned on the eval set.
+3. Escalation: start cheap and escalate when a verifier, schema error, empty search or loop detector (Q5) says the step failed.
+4. Training labels from running the eval suite with every candidate model, plus production traces scored by calibrated judges.
+5. Shadow mode, then an A/B on success, retries and user-visible failures, with a per-tenant kill switch.
 
-The hard parts:
-- Mid-trajectory switching breaks the prompt cache, because a new model starts with a cold prefix. Account for that in cost, or route only at task start and at subagent boundaries.
-- Router calibration drifts when providers update their models.
-- Different models need different tool descriptions and skills. Perplexity notes that Sonnet and GPT behave quite differently with skills, so each route needs its own eval coverage.
-- Evaluate the router itself: plot the cost-quality curve over thresholds, and compare against an oracle router (cheapest model that succeeded) to see the headroom.
+Static rules by task type cost nothing to serve and are easy to audit, but typically capture only part of the available savings. A learned router like RouteLLM's matrix factorization reports cost reductions above 2x on public benchmarks at near-equal quality, with a few milliseconds of overhead. A cascade like FrugalGPT gets similar savings without a trained router but adds a second model call on every escalation; if 30% of tasks escalate, latency on those rises by the cheap model's full runtime. I would start with a cascade on the two highest-volume task types, because escalation signals in agent loops are cheap and reliable, then train a router once there are enough labels.
 
-Tradeoffs. Per-step routing saves more but risks cache misses and inconsistent behavior. Per-task routing is simpler and keeps cache locality.
+Hard parts:
+- Switching models mid-trajectory throws away the prompt cache, so with a 40k token history a switch can cost more than it saves. Route at task start and at subagent boundaries.
+- Router calibration drifts when providers update models.
+- Different models need different tool descriptions and skills, so every route needs its own eval coverage.
+- Evaluate the router against an oracle that picks the cheapest model that succeeded, which shows the headroom left.
 
-Why this is likely: the listing asks you to "build and evaluate model selection and routing strategies that match each task to the right model and effort level", and Perplexity's Agent API docs describe multi-provider orchestration across model families.
+Why this is likely: the listing asks you to build and evaluate model selection and routing strategies that match each task to the right model and effort level.
 
-#### Q9. Design a pipeline that turns production agent trajectories into root-caused failure categories and new eval tasks.
+### Domain: graders, cost and tools
 
-Requirements. Millions of agent sessions a week across enterprise tenants. Privacy constraints: tenant data must stay scoped, and humans review only consented or redacted traces. The output is a ranked list of failure modes with frequency and impact, and a flow of reproducible tasks into the eval suites.
+#### Q11. Design the calibration study for an LLM judge that grades whether an enterprise task was completed, and decide what numbers would let it gate launches.
 
-Pipeline:
-1. Ingest. Structured spans per step (model call, tool call, arguments, result, error, tokens, latency) using OpenTelemetry-style trace and span ids, stored in a columnar store partitioned by tenant and day.
-2. Detect candidate failures cheaply first. Explicit signals: tool errors, schema validation failures, retries above N, loops (the same tool and arguments repeated), timeouts, user thumbs-down, user re-asks, abandoned sessions. Then sample by stratum and run calibrated LLM judges for outcome success and policy compliance.
-3. Attribute. For each failed trace, assign a fault owner (agent, tool or connector, environment, user) and a primary type (wrong tool, wrong arguments, missing permission handling, goal partially done, unintended action, context lost). tau-bench ships exactly this two-level labeling. AgentRx-style labeling also marks the critical failure step, which is the first step after which the task could no longer succeed.
-4. Build the taxonomy with humans. Open-code 50 to 100 traces per new product area into categories, then let the LLM labeler apply the taxonomy at scale. Re-check labeler agreement with humans monthly.
-5. Prioritize by frequency x severity x fixability, and by cost, since a loop that burns 200k tokens matters even if it is rare.
-6. Close the loop. For each top category, minimize a trace into a task spec: world snapshot, principal, instruction, success predicate. Add it to the gate suite, ship the fix (a tool description, a skill gotcha, harness retry logic), and confirm with a paired comparison.
+Start with labels. Sample 300 trajectories stratified by task type and by the judge's verdict, so rare failures are covered. Two domain experts label each one blind to the judge, because annotators shown the verdict anchor on it. Write the rubric first and adjudicate disagreements, which exposes ambiguous criteria.
 
-The hard parts:
-- Reproducing production state in a fake world, which needs synthetic stand-ins for tenant data.
-- Attribution ambiguity: a vague tool description makes the model pick the wrong tool, so is that the model or the tool?
-- Selection bias, because user complaints over-represent some surfaces.
-
-As a sizing example, if 3% of 1M weekly sessions fail and you judge-sample 2%, that is 600 judged failures a week, enough to rank the top 10 categories with tight intervals.
-
-Why this is likely: the listing asks you to "analyze agent trajectories and production failures, identify root causes, and ship improvements", and Perplexity's evaluation guide recommends building test sets from real failures and running calibrated judges on production traces.
-
-### Domain: graders and calibration
-
-#### Q10. You have an LLM judge that grades whether an enterprise task was completed. How do you calibrate it against humans, and what numbers would make you trust it?
-
-Start with labels you can trust. Pick 200 to 500 trajectories stratified by task type and by the judge's own verdict, so both rare failures and passes are covered. Have at least two domain experts label each one blind to the judge, because annotators shown the judge's answer anchor on it. Write the rubric first and adjudicate disagreements, which shows where it is ambiguous.
-
-Metrics:
-- Human-human Cohen's kappa is the ceiling: κ = (p_o - p_e) / (1 - p_e), where p_o is observed agreement and p_e is chance agreement from the marginals. If two experts agree at κ = 0.62, a judge at 0.60 with each of them behaves like a third annotator, and asking for 0.9 asks more than the task allows. Below about 0.6 human-human, fix the rubric before tuning the judge.
-- Judge-human kappa, plus the full confusion matrix. Kappa matters because accuracy is misleading at skewed prevalence: if 90% of runs pass, a judge that always says pass scores 90% accuracy and κ = 0.
-- Track TPR and TNR separately, because the pass rate you report is biased by both. If the judge's true positive rate is s and its true negative rate is t, the corrected pass rate is θ = (p_obs + t - 1) / (s + t - 1), the Rogan-Gladen correction. With s = 0.95, t = 0.80 and an observed rate of 0.70, the true rate is 0.667.
-- Consistency. Grade the same saved trajectory 5 times without rerunning the agent. Perplexity's own guide recommends this to separate agent variance from grader variance.
-- Calibration, if the judge gives confidence: expected calibration error and Brier score.
+Metrics and the decision:
+- Human-human Cohen's kappa is the ceiling. If two experts agree at 0.62, a judge at 0.60 with each behaves like a third expert, and demanding 0.9 asks more than the task allows. Below about 0.6 between humans, fix the rubric before tuning the judge.
+- Judge-human kappa plus the confusion matrix. Accuracy misleads at skewed prevalence: if 90% of runs pass, an always-pass judge scores 90% accuracy and kappa of 0.
+- True positive rate s and true negative rate t, because both bias the reported pass rate. The corrected rate is (p_obs + t - 1) / (s + t - 1). With s = 0.95, t = 0.80 and an observed 0.70, the true rate is 0.667, a 3.3 point overstatement.
+- Consistency: grade the same saved trajectory 5 times without re-running the agent, to separate grader variance from agent variance.
 
 ```python
 def cohen_kappa(a, b):
@@ -411,136 +540,125 @@ def cohen_kappa(a, b):
     po = sum(x == y for x, y in zip(a, b)) / n
     pe = sum((a.count(l) / n) * (b.count(l) / n) for l in set(a) | set(b))
     return 1.0 if pe == 1 else (po - pe) / (1 - pe)
+
+def corrected_rate(p_obs, tpr, tnr):
+    return (p_obs + tnr - 1) / (tpr + tnr - 1)
 ```
 
-Iterate on the individual disagreements and read every false pass. In an enterprise setting a false pass hides a real failure, so I would weight false negatives on safety and permission criteria far more heavily than false fails. Prefer narrow binary criteria ("ticket priority equals P1", "cites the right doc") over a 1 to 10 holistic score, and use code checks on end state wherever the criterion is verifiable. Hold out a test split to catch rubric overfitting. Re-run the calibration set whenever the judge model or prompt changes, and on a schedule, because provider updates shift judges silently.
+My gate rule: the judge may gate launches when judge-human kappa is within 0.05 of human-human kappa, the true negative rate on safety and permission criteria is at least 0.95, and repeat-grading flips stay under 3%. Otherwise its verdicts are reported but cannot block or pass.
 
-Why this is likely: the listing says graders must be "calibrated against human judgment", and Perplexity's October 2026 agent evaluation post describes a five-step human calibration process and a judge consistency check.
+Among grading methods, code checks on end state are exact and nearly free but cover only verifiable criteria. A single holistic 1 to 10 judge score is cheap but drifts and is hard to calibrate. Narrow binary criteria judged separately cost about 3 to 5 times more judge tokens but give per-criterion kappa you can act on. I would use code checks wherever possible, binary judged criteria for the rest, and re-run the calibration set on every judge model or prompt change.
 
-#### Q11. What are the main failure modes of LLM judges and outcome graders for agents, and how do you defend against each?
+Why this is likely: the listing says graders must be calibrated against human judgment, and Perplexity's agent evaluation post describes a human calibration process and a judge consistency check.
 
-Biases in model judges:
-- Position bias in pairwise grading: the judge prefers whichever answer appears first, or second. Measure swap consistency by running both orders, count disagreements as ties, and report the rate.
-- Verbosity bias: longer, more confident answers win. Control by grading against explicit criteria, and add length-matched pairs to the calibration set.
-- Self-preference: a judge from the same family as the agent rates its own style higher. Use a judge from a different family, or an ensemble, and check agreement separately for each agent family under test.
-- Rubric drift and prompt sensitivity: small judge prompt edits change pass rates by several points. Version judge prompts like code and re-run calibration on every change.
+#### Q12. An agent harness puts the current time and user name at the top of a 30k token system prompt. Sessions average 12 model calls. Estimate the cost of this choice, choose a fix, and pick a cache lifetime.
 
-Failure modes specific to agents:
-- Transcript versus outcome. An agent says "I booked it" and nothing exists in the database. Grade end state with code where possible, and use the judge for what code cannot check, such as tone, completeness and correct refusal.
-- Over-specified graders. Checking that the agent called tools in a fixed order punishes valid alternate paths. Anthropic's eval guide recommends grading outcomes over the exact path. Check outcomes and constraints (no forbidden tool, at most N calls).
-- Reward hacking and loopholes. Agents find paths the task author did not intend, sometimes valid ones (Anthropic describes a model "failing" a flight eval by finding a better policy loophole). Review a sample of passes as well as failures.
-- Broken tasks. A 0% pass rate across strong models usually means an impossible task or a buggy grader. Have a human solve the task, and require a reference solution that passes the grader.
-- Saturation. When a suite is above 95%, it only detects regressions, so add harder tasks from production.
-- Judge cost and latency at scale. Use a cheap judge for screening and escalate disagreements or low-confidence verdicts to a stronger judge or a human.
-- Contamination. Tasks published in papers or repos end up in training data, so keep a private held-out set.
+Prefill computes KV state for every prompt token; a prompt cache reuses it for an identical prefix. Matching is exact and prefix-only, so a timestamp in the first line changes every call's prefix and nothing after it is ever reused.
 
-What I would monitor continuously: judge-human kappa on a rolling labeled sample, swap consistency, the pass rate of reference solutions (should be 100%), and the flip rate of verdicts on unchanged trajectories.
+To estimate, assume the stable prefix (system prompt, tools, skill index) is 30k tokens and history grows by about 2k tokens per call, so call i has 30k + 2k x i input tokens. Over 12 calls that is 360k + 2k x 78, about 516k input tokens. Today all of it is billed at the full input rate. With the timestamp moved to the end, call 1 writes the cache and calls 2 to 12 read nearly all their prefix. Using Anthropic-style multipliers of 1.25x for a 5 minute write and 0.1x for reads, and treating each call's new 2k tokens as written, the cost is 32k x 1.25 for the first call, plus 11 x 2k x 1.25 written, plus 462k read at 0.1x: 40k + 27.5k + 46.2k, or about 114k token-equivalents. That is about 78% cheaper on input, and time to first token drops because prefill shrinks.
 
-Why this is likely: the listing requires graders "grounded in end-to-end outcomes", and Perplexity's skills post describes LLM judges grading full agent loops against rubrics, so knowing where those judges break is core to the role.
+```python
+def session_cost(prefix=30_000, step=2_000, calls=12, write=1.25, read=0.10, cached=True):
+    total = 0.0
+    for i in range(1, calls + 1):
+        n = prefix + step * i
+        if not cached:
+            total += n
+        elif i == 1:
+            total += n * write
+        else:
+            total += (n - step) * read + step * write
+    return total
 
-### Domain: efficiency, caching and context
+print(round(session_cost(cached=False)), round(session_cost()))
+```
 
-#### Q12. Explain how prompt caching works at the provider and engine level, its economics, and how you would restructure an agent harness to raise the hit rate.
+Option A moves the time and user fields to the last user message. It is free and keeps the whole prefix stable. Option B drops the time and gives the agent a clock tool, which is also stable but adds a tool call when time matters, maybe 5% of sessions. I pick A and add B only if prompts grow.
 
-Mechanism. Prefill computes key and value tensors for every prompt token at every layer. A prompt cache stores those KV blocks for a prefix and reuses them when a later request starts with identical tokens, skipping that prefill compute and cutting time to first token. Matching is exact and prefix-only, at block granularity. In vLLM, a block is identified by a hash chained over the previous block hashes plus its own tokens (Q5). A single changed token invalidates that block and everything after it. The model still generates fresh output, whereas a semantic response cache returns a stored response.
+Cache lifetime. A 5 minute write breaks even on the second use. A 1 hour write costs 2x and needs three uses. Agent calls are seconds apart, so 5 minutes wins inside a session; a 1 hour cache pays only for prefixes shared across sessions, such as the 30k system prompt across a tenant's users. I would add a cached-token fraction metric to the gate, since a harmless-looking prompt edit can silently double input cost.
 
-Provider economics (as published in 2026; verify current pricing):
-- Anthropic: explicit `cache_control` breakpoints. Reads cost about 0.1x base input, 5-minute writes cost 1.25x and 1-hour writes cost 2x.
-- OpenAI: automatic caching above a minimum of about 1,024 tokens, with a `prompt_cache_key` to steer routing.
-- Gemini: implicit caching plus explicit caches billed for storage.
+Why this is likely: the listing names caching and context management as efficiency levers and makes cost per successful task a target, so an estimate-and-choose cache question is a natural core expertise probe.
 
-Break-even for a 5-minute write: n uses cost 1.25 + 0.1(n - 1) against n uncached, so caching wins from the second use. A 1-hour write needs three uses.
+#### Q13. Config A uses a frontier model at high effort; config B uses a mid model with escalation. Given the run summary, decide which ships, using cost per successful task with uncertainty.
 
-Harness changes that raise the hit rate:
-1. Order the prompt from most stable to least stable: system prompt, tool definitions, skill index, long-lived documents, conversation history, then the newest turn. Put timestamps, user ids and request ids at the end, after the stable prefix.
-2. Keep tool definitions deterministic, with a fixed order and no per-request reordering. Loading a skill or tool mid-session inserts tokens in the middle and invalidates everything after. Append new context instead, for example skill files read as tool results.
-3. Make context compaction cache-aware. Summarizing old turns rewrites the prefix and forces a full re-prefill. Compact rarely and in large steps, and at a breakpoint.
-4. Keep sessions sticky to a replica or cache key. A router that switches models or replicas mid-session throws the cache away.
-5. Measure: the cached-token fraction per call, TTFT with and without hits, and cost per successful task. Production coding agents report near 100% cached-input fraction with a stable prefix.
+Data from a paired run on 400 tasks:
 
-One failure mode worth naming is a "harmless" harness change, such as adding the date to the system prompt, can double input cost overnight. The regression gate should track cache hit rate as a first-class metric.
+```text
+config  success  mean_cost/task  p95_cost  retries  p95_latency_s
+A       0.81     0.42            1.10      0.05     38
+B       0.79     0.17            0.95      0.22     41
+paired delta B-A success: -0.020, 95% CI [-0.041, +0.001]
+slice long_horizon (n=60): A 0.70, B 0.58, delta CI [-0.21, -0.03]
+```
 
-Why this is likely: the listing names "caching" and "context management" as efficiency levers and makes cost per successful task a target metric. Perplexity runs its own inference engine (ROSE), so KV-level reasoning is in scope.
+Cost per successful task is total spend on all attempts, including failed ones and retries, divided by the number of successes. A: 0.42 / 0.81 = 0.52 units. B: 0.17 / 0.79 = 0.215 units. B is about 58% cheaper per success.
 
-#### Q13. Define "cost per successful task" precisely, explain how to estimate it with uncertainty, and describe how you would use it to decide between two agent configurations.
+```python
+def cpst(mean_cost, success):
+    return mean_cost / success
 
-Definition. Cost per successful task (CPST) = total cost of all attempts / number of successful tasks. The numerator includes everything spent on the run, failed attempts included:
-- Input tokens, split into cached and uncached because they are priced differently.
-- Output and reasoning tokens.
-- Tool and connector calls with their own costs (search, sandbox minutes).
-- Grader cost, if you are measuring the eval pipeline itself.
-- Retries.
+a, b = cpst(0.42, 0.81), cpst(0.17, 0.79)
+print(round(a, 3), round(b, 3), round(1 - b / a, 2))
+```
 
-Failed attempts belong in the numerator because a cheap model that fails half the time and retries can cost more per success than an expensive model that succeeds first time. With retries allowed up to R, the expected cost per success is roughly E[cost per attempt] x E[attempts] / P(eventual success).
+Uncertainty. CPST is a ratio of two noisy means, and agent cost is heavy-tailed, so I would bootstrap over tasks rather than use a normal approximation, resampling the same tasks for both configs. The delta method works as a cross-check but understates the tail when a few loops cost 20x the median.
 
-Estimation. CPST is a ratio of two random sums, so its variance is not just the variance of cost. Use the delta method: for C = mean cost per task and S = success rate, Var(C/S) ≈ (1/S²)Var(C) + (C²/S⁴)Var(S) - 2(C/S³)Cov(C, S), all divided by n. Or bootstrap over tasks, which handles skewed costs. Agent costs are heavy-tailed, because a few loops cost 50x the median, so also report p50, p95 and the max per task, and cap or flag runaway runs. Compare configurations with a paired bootstrap on the same tasks.
+Decision. Quality is a constraint, cost is the objective. The overall success CI of minus 4.1 to plus 0.1 points sits inside a minus 5 point non-inferiority margin but not a minus 2 point one, so the answer depends on the margin agreed before the run, and I would say which one I used. The long-horizon slice fails clearly: B loses 12 points there. The answer is a split. Ship B for short tasks and route long-horizon tasks to A, which on this mix (15% long-horizon) gives a blended CPST near 0.26 with no slice regression, assuming long-horizon tasks cost the same per task as the overall mean; with real per-slice costs it will be higher. Alternatives considered: ship A everywhere, safe but about 2x the cost; ship B everywhere, cheapest but a real regression on the hardest, highest-value tasks.
 
-Deciding between A and B:
-1. Treat quality as a constraint. B must be non-inferior on task success (for example, the lower CI bound of B - A > -1.5 points) and must hold steady on every hard invariant and high-value slice.
-2. Given that, prefer lower CPST, and check p95 latency against the product SLO.
-3. Plot the frontier. For routing thresholds or effort levels, plot success against CPST and choose a point on the Pareto frontier. Show the whole curve, because stakeholders weigh quality and cost differently by tenant.
-4. Segment. A blended CPST can hide that B is cheaper on easy tasks but far worse on long-horizon ones. Report by task family and horizon.
+Checks before trusting it: both configs measured with the same cache warmth; success graded by the same calibrated judge; p95 latency of 41 seconds still inside the product budget; and the Q5 detector run over B's traces to explain its 0.22 retry rate.
 
-Failure modes: comparing CPST across different task mixes (normalize per family), ignoring cache effects (A's cost measured warm and B's cold), and counting "success" with an uncalibrated judge, which inflates the denominator.
+Why this is likely: the listing names cost per successful task as a metric the team moves and asks for sound quality, latency and cost tradeoff judgment.
 
-Why this is likely: the listing names "cost per successful task" as a metric the team moves and asks for sound "quality, latency and cost tradeoff judgment", so expect to be asked to define it precisely.
+#### Q14. Design the eval suite that tells you whether a rewrite of tool descriptions and skill loading improved tool selection, and how you would avoid breaking tools you did not touch.
 
-### Domain: tools, skills and harness
+Treat selection as classification with its own eval, separate from end-to-end success.
 
-#### Q14. How do you evaluate and improve tool descriptions, schemas, and skill loading so the agent picks the right tool, calls it correctly, and recovers from errors with fewer calls?
+1. Selection set. For each tool or skill, 20 to 40 positive queries where it should be chosen, negatives drawn from adjacent tools, and forbidden cases. Perplexity describes suites that check precision, recall and forbidden loads for skills, plus whether the agent reads the accessory files after loading. Track a full confusion matrix; most bugs are two tools with overlapping descriptions.
+2. Call correctness: schema-valid arguments, semantically right arguments (correct user id, date range), and calls needed to reach the goal.
+3. End-to-end tasks with the full loop and a rubric judge, to confirm that a selection gain also improves task success.
+4. Every orchestrator model separately, because families react differently to the same description.
 
-Treat tool and skill selection as a retrieval and classification problem with its own eval, separate from end-to-end success.
+Decision rule: ship the rewrite if macro recall rises with a paired CI above zero, forbidden-load rate stays flat or falls, calls per successful task rise by at most 5%, and every tool's recall stays within 5 points of its baseline.
 
-1. Selection evals. For each tool or skill, write positive queries (it should be chosen), negative queries for adjacent tools (it must not be chosen), and forbidden cases. Perplexity describes exactly this for skills: suites that check precision, recall and forbidden loads, plus whether the agent actually reads the accessory files after loading (progressive loading). Track a confusion matrix across tools. Most selection bugs are two tools with overlapping descriptions.
-2. Call-correctness evals. Check argument validity against the schema, semantic correctness of the arguments (the right user id, the right date range), and the number of calls to reach the goal.
-3. End-to-end evals with the full agent loop and a rubric judge, to confirm that a description fix that raises selection accuracy also holds up on the overall task.
-4. Run everything for each orchestrator model. Different model families react differently to the same description.
+Testing only end-to-end success needs about 1.5k tasks to see a 2 point change and blames nothing specific. A selection-only suite of 40 queries x 50 tools is 2k cheap single-turn calls, under a minute, and points at the exact confused pair, but misses argument errors. I would run selection on every PR and end-to-end in the nightly tier.
 
-Improvements that usually move the numbers:
-- Descriptions written as routing triggers ("Use when the user asks about X; not for Y") and aimed at the model that routes on them. Perplexity's skill guide says the description is the hard part, because the model routes on it.
-- Namespacing and consolidation. One `search_tickets(query, status, assignee)` beats three overlapping list tools.
-- Unambiguous parameter names (`user_id` rather than `user`), enums instead of free strings, and examples in the schema.
-- Token-efficient responses: pagination, filtering, and a `response_format` of concise or detailed. Return semantic fields (names), which saves the model a second call to resolve an opaque UUID.
-- Actionable errors. "Invalid date; expected YYYY-MM-DD; did you mean 2026-10-30?" lets the agent recover in one step instead of three. Anthropic's tool-writing guide reports large gains from exactly these edits.
-- Gotchas in skills, added as the agent fails. Start thin and grow from observed failures.
+Improvements that usually move the numbers: descriptions written as routing triggers ("use when the user asks about X; not for Y"); consolidating overlapping tools into one with filters; enums instead of free strings; concise response formats with pagination; and actionable errors. The Q5 trace shows the difference. A bare "forbidden" with no guidance caused three wasted calls, while "no access to f_91; ask an owner in finance_leads" ends the loop in one.
 
-Adding a new tool or skill can break selection of existing ones even though you never touched them (action at a distance), so every addition re-runs the full selection suite. Measure success and calls per successful task together, so a fix that adds an extra lookup call is visible as a cost regression.
+Adding one tool can steal selections from an untouched one, so every addition re-runs the full selection suite and reports per-tool recall deltas alongside the average.
 
-Why this is likely: the listing asks you to "improve tool descriptions, schemas and result handling so agents select the right tools ... and recover from errors with fewer unnecessary calls", and Perplexity's published skills guide describes the precision, recall and forbidden-load suites it runs.
+Why this is likely: the listing asks you to improve tool descriptions, schemas and result handling so agents select the right tools and recover with fewer calls, and Perplexity's skills guide describes these suites.
 
 ### Behavioral
 
-#### Q15. Tell me about a time you led an ambiguous, cross-team effort to define what "good" meant for a system and then moved the metric.
+#### Q15. Tell me how you use coding agents day to day, including a time an agent's output looked right but was wrong, how you caught it, and what you changed in how you check agent work. Tie it to a project where you defined a metric across teams.
 
-The interviewer is testing whether you can take a vague goal ("make agents better for enterprise customers"), turn it into a measurable definition, earn agreement from teams you do not manage, and ship changes that move the number. Perplexity's portal lists the traits it screens for: rigorous thinking, controlling complexity, principled tradeoffs, fast learning, and clear communication. The listing adds leading "ambiguous, cross-team initiatives" and mentoring.
+The interviewer wants evidence that you get real speed from agents and that you check their work systematically. Perplexity scores agent use directly in its agentic round, and its portal lists rigorous thinking, controlling complexity and principled tradeoffs as traits, so this question links both.
 
 A strong structure:
-1. Situation in two sentences, with scale: which system, who used it, and what was broken or unmeasured.
-2. The ambiguity. Name the specific disagreement, for example product wanted user satisfaction, research wanted benchmark scores, and platform cared about latency.
-3. Your definition of success, and how you got buy-in. For example, you wrote a one-page metric spec, labeled 100 real cases with each team, showed where their intuitions disagreed, and agreed a primary metric with guardrails.
-4. The mechanism you built: an eval set, a grader, a dashboard, a gate. Give a concrete number (300 tasks, κ = 0.7 with experts, 25 minutes per run).
-5. What you changed, and the measured effect, with honest uncertainty: "task success went from 61% to 72%, a CI of +7 to +15 on a paired comparison, and cost per success fell 30%."
-6. A tradeoff you made deliberately and one thing that went wrong. For example, the first grader over-passed, you caught it by reading false passes, and you changed the rubric.
-7. What persisted after you: other teams adopted the gate, or you mentored someone who now owns it.
+1. Your workflow in concrete terms. What you delegate (test scaffolding, migrations, boilerplate, first drafts of analysis scripts), what you keep for yourself (metric definitions, security-sensitive parsing, statistical decision rules), and how you size prompts so each diff is reviewable in a few minutes.
+2. The miss. A specific case, for example an agent-written eval aggregation that averaged trials before tasks and shifted a headline number by 3 points, or a judge parser that used `eval`. Say how long it went unnoticed and what it cost.
+3. How you caught it: a test with known answers, a mutation check, reading 20 raw cases, or a number that disagreed with intuition.
+4. What you changed: tests first with hand-computed expected values, a checklist for generated code (invented APIs, unvalidated input, silent drops), and a rule that metric code needs a second human reviewer.
+5. The cross-team link. The metric you defined with product, research and platform, how you got agreement (a one-page spec and 100 jointly labeled cases), and the measured result with uncertainty, such as success up 11 points with a paired interval of plus 7 to plus 15 and cost per success down 30%.
+6. What persisted: the gate or checklist other teams adopted, or someone you mentored who now owns it.
 
-Answers lose points for missing numbers, a metric you defined but nobody used, "we" throughout with no clear personal contribution, or a story where the eval number moved but you cannot say whether users noticed. Prepare one backup story about a time your eval was wrong and how you found out, because interviewers in eval roles often probe whether you distrust your own measurements.
+Show that agents are part of your daily work, since Perplexity's careers guide says knowledge of how to use AI is required and its agentic round, if your loop includes it, scores agent use. When you say the tests passed, say who wrote the tests. Keep a backup story about an eval of yours that was wrong.
 
-Why this is likely: candidate reports describe a behavioral and project deep-dive in the recruiter and manager rounds, and Perplexity's portal says most technical loops include at least one non-technical round.
+Why this is likely: Perplexity's careers interview guide says "knowledge of how to use AI is required", its agentic coding round, if your loop includes it, scores agent use, and Perplexity runs a long hiring manager deep dive on past projects, so one question that covers both is the most likely behavioral probe.
 
 ## Prep checklist
 
-- [ ] Solve Perplexity's public Todo List practice exercise end to end in Python under 60 minutes, keeping earlier parts' tests green as you add parts.
-- [ ] Write the async eval runner from Q1 from memory, including token bucket, semaphore, jittered retries, timeouts and ordered results, then add a tokens-per-minute limit.
-- [ ] Implement the provider pool with circuit breaking (Q2), plus the heap-based variant for 1e5 providers and events.
-- [ ] Code a paired cluster bootstrap and a McNemar test, and compute a minimum detectable effect for 300 tasks by hand.
-- [ ] Derive the unbiased pass@k and pass^k estimators and explain why suite pass^k is the mean of p_i^k.
-- [ ] Implement a chained-hash prefix cache with LRU and refcounts, and explain why one changed token invalidates every later block.
-- [ ] Compute Cohen's kappa, TPR, TNR and a prevalence-corrected pass rate on a small labeled set, and be able to explain why accuracy misleads at 90% prevalence.
-- [ ] Read Perplexity's posts on agent evaluation, agent skills, and the WANDR benchmark, and form an opinion on each grading choice.
-- [ ] Read the tau-bench paper and Anthropic's "Demystifying evals for AI agents" and "Writing effective tools for agents".
-- [ ] Practice one 45-minute whiteboard design each for an eval environment with snapshot and restore, a regression gate with non-inferiority margins, and a cost-aware router.
-- [ ] Learn current prompt caching rules and prices for at least two providers, and compute break-even uses for a 5-minute and a 1-hour write.
-- [ ] Prepare two behavioral stories with numbers: one where you defined a metric across teams, one where your own eval was wrong.
+- [ ] Solve Perplexity's public todo list practice exercise in Python under 60 minutes without AI, keeping earlier parts' tests green.
+- [ ] Write the Q1 runner and Q2 provider pool from memory, then the heap variant for 1e5 providers.
+- [ ] Hand-compute unbiased pass^k for a few tasks and code a paired bootstrap that intersects task sets.
+- [ ] Practice reviewing generated code for invented APIs, off-by-ones, missing edge cases and injection, using Q4 as a template.
+- [ ] Debug three agent traces by hand and write a loop detector that streams over JSONL.
+- [ ] Do one timed multi-file task with a coding agent, writing tests first and logging each wrong output you caught.
+- [ ] Compute Cohen's kappa, TPR, TNR and a prevalence-corrected pass rate on a small labeled set.
+- [ ] Practice 45 minute designs for an eval environment, a regression gate with non-inferiority margins, and a cost-aware router, each with numbers.
+- [ ] Learn prompt caching rules for two providers and redo the Q12 session estimate with your own numbers.
+- [ ] Read Perplexity's posts on agent evaluation and agent skills, plus the tau-bench paper and Anthropic's agent eval and tool-writing guides.
+- [ ] Prepare a 90 minute deep dive on one past system and two behavioral stories with numbers, one about catching a wrong agent output.
 
 ## Sources
 
@@ -556,25 +674,17 @@ Why this is likely: candidate reports describe a behavioral and project deep-div
 - https://www.perplexity.ai/hub/blog/wandr-benchmark-evaluating-research-agents-that-must-search-wide-and-deep
 - https://github.com/perplexityai/search_evals
 - https://docs.perplexity.ai/docs/cookbook/articles/multi-provider-orchestration/README
-- https://jobs.accel.com/companies/perplexity-2/jobs/97418124-member-of-technical-staff-software-engineer-enterprise-agent-evals-efficiency
+- https://www.glassdoor.com/Interview/Perplexity-AI-Interview-Questions-E8515634.htm
+- https://www.1point3acres.com/interview/problems/company/perplexity
 - https://aceoffer.app/interviews/perplexity
 - https://www.reddit.com/r/Hack2Hire/comments/1us3j19/perplexity_interview_process_experience
-- https://ratelys.com/company/perplexity-ai/interviews
-- https://www.linkjob.ai/interview-questions/perplexity-ai-interview
 - https://www.fastprep.io/problems/perplexity-llm-provider-pool-failover
-- https://www.calibrd.com/interview-prep/perplexity-interview
 - https://www.techprep.app/blog/perplexity-interview-process
-- https://www.1point3acres.com/interview/problems/company/perplexity
 - https://arxiv.org/pdf/2406.12045
 - https://github.com/sierra-research/tau-bench
 - https://www.anthropic.com/research/demystifying-evals-for-ai-agents
 - https://www.anthropic.com/research/writing-tools-for-agents
-- https://arxiv.org/abs/2411.00640
-- https://cameronrwolfe.substack.com/p/stats-llm-evals
-- https://www.aievals.co/learn/statistics/bootstrap-and-paired-tests
-- https://www.potatoannotator.com/docs/guides/llm-judge-human-agreement
-- https://arxiv.org/html/2406.07791v9
-- https://arxiv.org/html/2406.18665v4
+- https://arxiv.org/abs/2406.18665
+- https://arxiv.org/abs/2305.05176
 - https://github.com/vllm-project/vllm/blob/main/docs/design/prefix_caching.md
-- https://www.morphllm.com/prompt-caching
-- https://arxiv.org/html/2602.02475
+- https://cameronrwolfe.substack.com/p/stats-llm-evals
