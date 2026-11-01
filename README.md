@@ -6,7 +6,7 @@ Organized by company, then by role. Each role page has the likely interview loop
 
 These are estimates built from public job listings, public hiring guides and candidate reports. They are not real or leaked questions.
 
-**8 companies, 8 roles, 120 questions.**
+**8 companies, 8 roles, 122 questions.**
 
 ## Contents
 
@@ -49,6 +49,6 @@ These are estimates built from public job listings, public hiring guides and can
 
 ## Perplexity
 
-- [Member of Technical Staff (Software Engineer, Enterprise Agent Evals & Efficiency)](perplexity/mts-software-engineer-enterprise-agent-evals/): 15 questions
+- [Member of Technical Staff (Software Engineer, Enterprise Agent Evals & Efficiency)](perplexity/mts-software-engineer-enterprise-agent-evals/): 17 questions
 
 New companies and roles are added regularly. Star the repo to follow along.
