@@ -6,7 +6,7 @@ Organized by company, then by role. Each role page has the likely interview loop
 
 These are estimates built from public job listings, public hiring guides and candidate reports. They are not real or leaked questions.
 
-**8 companies, 8 roles, 122 questions.**
+**8 companies, 8 roles, 124 questions.**
 
 ## Contents
 
@@ -45,7 +45,7 @@ These are estimates built from public job listings, public hiring guides and can
 
 ## NVIDIA
 
-- [Senior Software Engineer, Agentic AI](nvidia/senior-software-engineer-agentic-ai/): 15 questions
+- [Senior Software Engineer, Agentic AI](nvidia/senior-software-engineer-agentic-ai/): 17 questions
 
 ## Perplexity
 
