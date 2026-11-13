@@ -6,7 +6,7 @@ Organized by company, then by role. Each role page has the likely interview loop
 
 These are estimates built from public job listings, public hiring guides and candidate reports. They are not real or leaked questions.
 
-**8 companies, 8 roles, 124 questions.**
+**8 companies, 9 roles, 140 questions.**
 
 ## Contents
 
@@ -33,6 +33,7 @@ These are estimates built from public job listings, public hiring guides and can
 
 ## Google DeepMind
 
+- [Research Engineer, Chemical, Biological and Nuclear AI Safety](google-deepmind/research-engineer-cbrn-ai-safety/): 16 questions
 - [Research Scientist, Gemini Agent Safety Post Training](google-deepmind/research-scientist-gemini-agent-safety-post-training/): 15 questions
 
 ## Meta
