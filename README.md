@@ -6,7 +6,7 @@ Organized by company, then by role. Each role page has the likely interview loop
 
 These are estimates built from public job listings, public hiring guides and candidate reports. They are not real or leaked questions.
 
-**9 companies, 14 roles, 223 questions.**
+**9 companies, 15 roles, 239 questions.**
 
 ## Contents
 
@@ -27,6 +27,7 @@ These are estimates built from public job listings, public hiring guides and can
 
 ## Databricks
 
+- [AI Engineer, Forward Deployed Engineering (AI FDE)](databricks/ai-engineer-forward-deployed-engineering/): 16 questions
 - [Staff Product Manager, Agentic AI Applications](databricks/staff-product-manager-agentic-ai-applications/): 15 questions
 
 ## Google
