@@ -6,7 +6,7 @@ Organized by company, then by role. Each role page has the likely interview loop
 
 These are estimates built from public job listings, public hiring guides and candidate reports. They are not real or leaked questions.
 
-**8 companies, 10 roles, 156 questions.**
+**9 companies, 11 roles, 172 questions.**
 
 ## Contents
 
@@ -17,6 +17,7 @@ These are estimates built from public job listings, public hiring guides and can
 - [Meta](#meta)
 - [Netflix](#netflix)
 - [NVIDIA](#nvidia)
+- [OpenAI](#openai)
 - [Perplexity](#perplexity)
 
 ## Capital One
@@ -48,6 +49,10 @@ These are estimates built from public job listings, public hiring guides and can
 
 - [Senior Software Engineer, Agentic AI](nvidia/senior-software-engineer-agentic-ai/): 17 questions
 - [Senior Software Engineer, Agentic Systems](nvidia/senior-software-engineer-agentic-systems/): 16 questions
+
+## OpenAI
+
+- [Software Engineer, AI for Chip Design](openai/software-engineer-ai-for-chip-design/): 16 questions
 
 ## Perplexity
 
