@@ -6,7 +6,7 @@ Organized by company, then by role. Each role page has the likely interview loop
 
 These are estimates built from public job listings, public hiring guides and candidate reports. They are not real or leaked questions.
 
-**9 companies, 17 roles, 273 questions.**
+**9 companies, 18 roles, 292 questions.**
 
 ## Contents
 
@@ -42,6 +42,7 @@ These are estimates built from public job listings, public hiring guides and can
 
 ## Meta
 
+- [AI Research Scientist, LLM Post-Training (Meta Superintelligence Labs)](meta/ai-research-scientist-llm-post-training-msl/): 19 questions
 - [AI Research Scientist, Robotics (Meta Superintelligence Labs)](meta/ai-research-scientist-robotics-msl/): 16 questions
 - [Software Engineer, Machine Learning](meta/software-engineer-machine-learning/): 15 questions
 
