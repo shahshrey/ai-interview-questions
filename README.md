@@ -6,7 +6,7 @@ Organized by company, then by role. Each role page has the likely interview loop
 
 These are estimates built from public job listings, public hiring guides and candidate reports. They are not real or leaked questions.
 
-**9 companies, 18 roles, 292 questions.**
+**9 companies, 19 roles, 309 questions.**
 
 ## Contents
 
@@ -48,6 +48,7 @@ These are estimates built from public job listings, public hiring guides and can
 
 ## Netflix
 
+- [AI Engineer 6 - AI Foundation & Tooling, Ads Platform](netflix/ai-engineer-6-ai-foundation-tooling-ads-platform/): 17 questions
 - [Machine Learning Engineer (L4/L5), Studio Media Algorithms](netflix/machine-learning-engineer-studio-media-algorithms/): 17 questions
 - [Manager, Applied AI - Title Launch Management](netflix/manager-applied-ai-title-launch-management/): 15 questions
 
