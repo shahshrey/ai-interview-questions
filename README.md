@@ -6,7 +6,7 @@ Organized by company, then by role. Each role page has the likely interview loop
 
 These are estimates built from public job listings, public hiring guides and candidate reports. They are not real or leaked questions.
 
-**9 companies, 26 roles, 429 questions.**
+**9 companies, 27 roles, 447 questions.**
 
 ## Contents
 
@@ -34,6 +34,7 @@ These are estimates built from public job listings, public hiring guides and can
 ## Google
 
 - [Product Manager, Ask Advisor AI Agent](google/product-manager-ask-advisor-ai-agent/): 18 questions
+- [Senior Product Manager, AI Search Experience and Agentic Experimentation](google/senior-product-manager-ai-search-agentic-experimentation/): 18 questions
 - [Senior Software Engineer, AI/ML, ML Training](google/senior-software-engineer-ai-ml-ml-training/): 17 questions
 - [Senior Software Engineer, Generative AI, Ads Safety](google/senior-software-engineer-generative-ai-ads-safety/): 15 questions
 - [Staff Software Engineer, AI/ML, Search Ads](google/staff-software-engineer-ai-ml-search-ads/): 16 questions
