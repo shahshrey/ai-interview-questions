@@ -6,7 +6,7 @@ Organized by company, then by role. Each role page has the likely interview loop
 
 These are estimates built from public job listings, public hiring guides and candidate reports. They are not real or leaked questions.
 
-**9 companies, 25 roles, 413 questions.**
+**9 companies, 26 roles, 429 questions.**
 
 ## Contents
 
@@ -65,6 +65,7 @@ These are estimates built from public job listings, public hiring guides and can
 ## OpenAI
 
 - [AI Systems Engineer, Codex Agents](openai/ai-systems-engineer-codex-agents/): 17 questions
+- [Applied AI Engineer, Sign in with ChatGPT](openai/applied-ai-engineer-sign-in-with-chatgpt/): 16 questions
 - [Software Engineer, AI for Chip Design](openai/software-engineer-ai-for-chip-design/): 16 questions
 
 ## Perplexity
